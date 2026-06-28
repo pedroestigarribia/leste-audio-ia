@@ -6,14 +6,13 @@ import {
   isAllowedAudio,
   shouldConvert,
 } from "@/lib/audio";
-import { convertToWav } from "@/lib/audio-convert";
 import {
   MissingApiKeyError,
   getGeminiMissingKeyMessage,
   getMaxFileSizeBytes,
   getServerEnv,
+  requireGeminiApiKey,
 } from "@/lib/env";
-import { transcribeAudioWithGemini } from "@/lib/gemini";
 import { cleanupFiles, saveUploadedFileToTemp } from "@/lib/temp-files";
 import type { TranscriptionResponse } from "@/types/audio";
 
@@ -55,6 +54,13 @@ export async function POST(request: Request) {
         400,
       );
     }
+
+    requireGeminiApiKey();
+
+    const [{ transcribeAudioWithGemini }, { convertToWav }] = await Promise.all([
+      import("@/lib/gemini"),
+      import("@/lib/audio-convert"),
+    ]);
 
     const savedFile = await saveUploadedFileToTemp(fileEntry);
     filesToCleanup.push(savedFile.filePath);
