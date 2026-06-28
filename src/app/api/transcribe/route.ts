@@ -138,10 +138,7 @@ export async function POST(request: Request) {
 
     requireGeminiApiKey();
 
-    const [{ transcribeAudioWithGemini }, { convertToWav }] = await Promise.all([
-      import("@/lib/gemini"),
-      import("@/lib/audio-convert"),
-    ]);
+    const { transcribeAudioWithGemini } = await import("@/lib/gemini");
 
     const savedFile = await saveUploadedFileToTemp(fileEntry);
     filesToCleanup.push(savedFile.filePath);
@@ -164,6 +161,7 @@ export async function POST(request: Request) {
         throw error;
       }
 
+      const { convertToWav } = await import("@/lib/audio-convert");
       const convertedFilePath = await convertToWav(savedFile.filePath);
       filesToCleanup.push(convertedFilePath);
       converted = true;
