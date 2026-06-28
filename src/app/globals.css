@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-montserrat), sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(255, 213, 61, 0.24), transparent 24rem),
+    linear-gradient(180deg, rgba(0, 0, 163, 0.03), transparent 16rem),
+    #f5f1ea;
+}
+
+::selection {
+  background: rgba(0, 0, 163, 0.18);
+  color: #111827;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
