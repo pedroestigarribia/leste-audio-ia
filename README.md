@@ -139,6 +139,12 @@ Abrir:
 
 `http://localhost:3000`
 
+## URL de produção planejada
+
+Domínio:
+
+`https://lesteaudio.space`
+
 ## Como testar com áudio do WhatsApp
 
 1. Exporte, baixe ou encaminhe os áudios para sua máquina.
@@ -317,7 +323,7 @@ git push -u origin main
 Checklist de deploy:
 
 1. Suba o projeto para GitHub.
-2. Conecte o repositório no painel da Hostinger.
+2. Conecte o repositório no painel da Hostinger em um ambiente com suporte a Node.js/Next.js.
 3. Configure as variáveis de ambiente:
    - `GEMINI_API_KEY`
    - `GEMINI_MODEL`
@@ -331,8 +337,9 @@ Checklist de deploy:
 5. Use:
    - build: `npm run build`
    - start: `npm run start`
-6. Verifique se o ambiente suporta `ffmpeg-static`.
-7. Se falhar, instale FFmpeg no VPS ou ajuste o ambiente/plano para um runtime com suporte adequado.
+6. Configure o domínio `lesteaudio.space` para apontar para o projeto publicado.
+7. Verifique se o ambiente suporta `ffmpeg-static`.
+8. Se falhar, instale FFmpeg no VPS ou ajuste o ambiente/plano para um runtime com suporte adequado.
 
 ## Limitações da primeira versão
 
