@@ -285,7 +285,8 @@ Rota pronta para gerar TXT no backend, embora o download atual seja feito no fro
 {
   "dev": "next dev",
   "build": "next build",
-  "start": "next start",
+  "start": "node server.js",
+  "start:next": "next start",
   "lint": "next lint",
   "typecheck": "tsc --noEmit"
 }
@@ -320,11 +321,24 @@ git push -u origin main
 
 ## Como preparar para Hostinger
 
-Checklist de deploy:
+Este projeto deve ser publicado como **Node.js Web App**, nao como Hostinger Horizons. O Horizons recria outro app em React/JavaScript e nao preserva as rotas backend do Next.js, upload multipart, Gemini, DeepSeek e FFmpeg.
+
+Checklist de deploy via GitHub:
 
 1. Suba o projeto para GitHub.
-2. Conecte o repositório no painel da Hostinger em um ambiente com suporte a Node.js/Next.js.
-3. Configure as variáveis de ambiente:
+2. No hPanel, acesse `Websites`.
+3. Se `lesteaudio.space` ja estiver associado a outro tipo de site, remova esse website primeiro ou escolha criar um novo Node.js Web App para o dominio correto.
+4. Clique em `Add Website`.
+5. Escolha `Node.js Web App`.
+6. Escolha `Import Git repository`.
+7. Conecte o GitHub e selecione `pedroestigarribia/leste-audio-ia`.
+8. Use a branch `main`.
+9. Configure:
+   - Node: `20` ou superior
+   - Build command: `npm run build`
+   - Start command: `npm run start`
+   - Startup file, se o painel pedir: `server.js`
+10. Configure as variáveis de ambiente:
    - `GEMINI_API_KEY`
    - `GEMINI_MODEL`
    - `DEEPSEEK_API_KEY`
@@ -333,13 +347,34 @@ Checklist de deploy:
    - `MAX_PARALLEL_TRANSCRIPTIONS`
    - `MAX_FILE_SIZE_MB`
    - `TEMP_UPLOAD_DIR`
-4. Garanta Node `>= 20`.
-5. Use:
-   - build: `npm run build`
-   - start: `npm run start`
-6. Configure o domínio `lesteaudio.space` para apontar para o projeto publicado.
-7. Verifique se o ambiente suporta `ffmpeg-static`.
-8. Se falhar, instale FFmpeg no VPS ou ajuste o ambiente/plano para um runtime com suporte adequado.
+11. Configure o domínio `lesteaudio.space` para apontar para o projeto publicado.
+12. Verifique se o ambiente suporta `ffmpeg-static`.
+13. Se FFmpeg falhar, instale FFmpeg no VPS ou ajuste o ambiente/plano para um runtime com suporte adequado.
+
+Se o repositório nao aparecer na Hostinger:
+
+1. Abra `https://github.com/settings/installations`.
+2. Procure a instalacao da Hostinger.
+3. Clique em `Configure`.
+4. Em `Repository access`, selecione `All repositories` ou marque manualmente `leste-audio-ia`.
+5. Salve.
+6. Volte para a Hostinger e reconecte o GitHub.
+7. Confira se a Hostinger esta conectada na conta GitHub `pedroestigarribia`, nao em outra conta.
+
+Plano B via ZIP:
+
+1. Gere um ZIP limpo com:
+   ```bash
+   git archive --format=zip --output leste-audio-ia-hostinger.zip HEAD
+   ```
+2. No hPanel, escolha `Node.js Web App`.
+3. Escolha upload de arquivos.
+4. Envie `leste-audio-ia-hostinger.zip`.
+5. Configure os mesmos comandos:
+   - Build command: `npm run build`
+   - Start command: `npm run start`
+   - Startup file, se pedido: `server.js`
+6. Configure as variáveis de ambiente no painel.
 
 ## Limitações da primeira versão
 
