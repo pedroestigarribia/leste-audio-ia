@@ -8,6 +8,8 @@ import { nanoid } from "nanoid";
 import { getFileExtension, getMimeTypeFromExtension } from "@/lib/audio";
 import { getServerEnv } from "@/lib/env";
 
+type UploadedTempFileInput = Pick<File, "name" | "type" | "size" | "arrayBuffer">;
+
 function getResolvedTempDir() {
   return path.resolve(process.cwd(), getServerEnv().tempUploadDir);
 }
@@ -23,7 +25,7 @@ export async function ensureTempDir() {
   return getResolvedTempDir();
 }
 
-export async function saveUploadedFileToTemp(file: File) {
+export async function saveUploadedFileToTemp(file: UploadedTempFileInput) {
   const tempDir = await ensureTempDir();
   const sanitizedOriginalName = sanitizeFileName(file.name);
   const extension = getFileExtension(sanitizedOriginalName);
