@@ -423,6 +423,25 @@ Plano B via ZIP:
    - Startup file, se pedido: `server.js`
 6. Configure as variáveis de ambiente no painel.
 
+### Se aparecer `Application error: a client-side exception has occurred`
+
+Esse erro pode acontecer quando a CDN/cache da Hostinger entrega um HTML antigo apontando para arquivos antigos em `/_next/static/...` que nao existem mais no build atual. O sintoma mais comum e a raiz `/` responder com `Cache-Control: s-maxage=31536000` e algum chunk antigo retornar `404`.
+
+Como corrigir no hPanel:
+
+1. Confirme que o ultimo commit da branch `main` foi redeployado.
+2. Rode novamente o build do Node.js Web App.
+3. Reinicie o app Node.js.
+4. Limpe/purge o cache/CDN da Hostinger para `lesteaudio.space`.
+5. Abra `https://lesteaudio.space/?v=<commit-atual>` para forcar uma primeira carga sem cache.
+6. Depois abra `https://lesteaudio.space` e confirme que a raiz nao esta mais usando HTML antigo.
+
+O projeto tambem inclui protecoes contra esse caso:
+
+- `server.js` intercepta assets antigos quando o start command usa `npm run start`.
+- `next.config.mjs` reescreve assets antigos conhecidos quando o ambiente usa `next start`.
+- A rota `/` envia `Cache-Control: no-store, no-cache, max-age=0, must-revalidate`.
+
 ## Limitações da primeira versão
 
 - Não integra diretamente com WhatsApp.
