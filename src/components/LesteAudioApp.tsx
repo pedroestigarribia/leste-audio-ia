@@ -94,11 +94,17 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [appError, setAppError] = useState<string | null>(null);
   const [audioPreviewUrls, setAudioPreviewUrls] = useState<Record<string, string>>({});
+  const [speechAudioUrls, setSpeechAudioUrls] = useState<Partial<Record<GeneralResultKey, string>>>(
+    {},
+  );
+  const [speechErrors, setSpeechErrors] = useState<Partial<Record<GeneralResultKey, string>>>({});
 
   const itemsRef = useRef<AudioItem[]>([]);
   const cancelledIdsRef = useRef<Set<string>>(new Set());
   const addMoreInputRef = useRef<HTMLInputElement | null>(null);
   const audioPreviewUrlsRef = useRef<Record<string, string>>({});
+  const speechAudioUrlsRef = useRef<Partial<Record<GeneralResultKey, string>>>({});
+  const activeSpeechRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -107,6 +113,10 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   useEffect(() => {
     audioPreviewUrlsRef.current = audioPreviewUrls;
   }, [audioPreviewUrls]);
+
+  useEffect(() => {
+    speechAudioUrlsRef.current = speechAudioUrls;
+  }, [speechAudioUrls]);
 
   useEffect(() => {
     setAudioPreviewUrls((current) => {
@@ -137,6 +147,12 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     return () => {
       for (const url of Object.values(audioPreviewUrlsRef.current)) {
         URL.revokeObjectURL(url);
+      }
+
+      for (const url of Object.values(speechAudioUrlsRef.current)) {
+        if (url) {
+          URL.revokeObjectURL(url);
+        }
       }
     };
   }, []);
@@ -169,6 +185,40 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     });
   }
 
+  function clearSpeechResult(key: GeneralResultKey) {
+    setSpeechErrors((current) => {
+      const nextState = { ...current };
+      delete nextState[key];
+      return nextState;
+    });
+
+    setSpeechAudioUrls((current) => {
+      const currentUrl = current[key];
+
+      if (currentUrl) {
+        URL.revokeObjectURL(currentUrl);
+      }
+
+      const nextState = { ...current };
+      delete nextState[key];
+      return nextState;
+    });
+  }
+
+  function clearAllSpeechResults() {
+    activeSpeechRef.current?.pause();
+    activeSpeechRef.current = null;
+
+    for (const url of Object.values(speechAudioUrlsRef.current)) {
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    setSpeechAudioUrls({});
+    setSpeechErrors({});
+  }
+
   function clearAggregateResults() {
     setGeneralResults(EMPTY_GENERAL_RESULTS);
     setTaskErrorState("summary:all");
@@ -177,9 +227,11 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setTaskErrorState("tasks:all");
     setTaskErrorState("keyData:all");
     setTaskErrorState("reply:all");
+    clearAllSpeechResults();
   }
 
   function updateGeneralResult(key: GeneralResultKey, value: string) {
+    clearSpeechResult(key);
     setGeneralResults((current) => ({
       ...current,
       [key]: normalizePlainText(value),
@@ -407,6 +459,93 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     }
 
     return normalizePlainText(payload.result);
+  }
+
+  async function playSpeechUrl(url: string) {
+    activeSpeechRef.current?.pause();
+    const audio = new Audio(url);
+    activeSpeechRef.current = audio;
+    await audio.play();
+  }
+
+  async function handleSpeakGeneralResult(key: GeneralResultKey, title: string, text: string) {
+    const normalizedText = normalizePlainText(text);
+
+    if (!normalizedText) {
+      setAppError("Nao ha texto para ouvir.");
+      return;
+    }
+
+    const existingUrl = speechAudioUrlsRef.current[key];
+
+    if (existingUrl) {
+      try {
+        await playSpeechUrl(existingUrl);
+      } catch {
+        setSpeechErrors((current) => ({
+          ...current,
+          [key]: "Nao foi possivel iniciar o audio automaticamente. Use o player abaixo.",
+        }));
+      }
+      return;
+    }
+
+    setLoadingState(`speech:${key}`, true);
+    setSpeechErrors((current) => {
+      const nextState = { ...current };
+      delete nextState[key];
+      return nextState;
+    });
+
+    try {
+      const response = await fetch("/api/speech", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title,
+          text: normalizedText,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as TextProcessResponse | null;
+        throw new Error(payload?.error || "Falha ao gerar a voz com IA.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+
+      setSpeechAudioUrls((current) => {
+        const currentUrl = current[key];
+
+        if (currentUrl) {
+          URL.revokeObjectURL(currentUrl);
+        }
+
+        return {
+          ...current,
+          [key]: url,
+        };
+      });
+
+      try {
+        await playSpeechUrl(url);
+      } catch {
+        setSpeechErrors((current) => ({
+          ...current,
+          [key]: "Audio gerado. Se nao tocar automaticamente, use o player abaixo.",
+        }));
+      }
+    } catch (error) {
+      setSpeechErrors((current) => ({
+        ...current,
+        [key]: buildApiErrorMessage(error),
+      }));
+    } finally {
+      setLoadingState(`speech:${key}`, false);
+    }
   }
 
   async function handleSummarizeItem(itemId: string) {
@@ -699,12 +838,15 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   }
 
   function handleClearAll() {
+    clearAllSpeechResults();
+
     startTransition(() => {
       cancelledIdsRef.current.clear();
       setItems([]);
       setGeneralResults(EMPTY_GENERAL_RESULTS);
       setLoadingMap({});
       setTaskErrors({});
+      setSpeechErrors({});
       setCopiedKey(null);
       setAppError(null);
       setIsTranscribingBatch(false);
@@ -889,6 +1031,16 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
           isReplyLoading={Boolean(loadingMap["reply:all"])}
           isSummaryLoading={Boolean(loadingMap["summary:all"])}
           isTasksLoading={Boolean(loadingMap["tasks:all"])}
+          speechAudioUrls={speechAudioUrls}
+          speechErrors={speechErrors}
+          speechLoadingMap={{
+            analysis: Boolean(loadingMap["speech:analysis"]),
+            keyData: Boolean(loadingMap["speech:keyData"]),
+            organized: Boolean(loadingMap["speech:organized"]),
+            reply: Boolean(loadingMap["speech:reply"]),
+            summary: Boolean(loadingMap["speech:summary"]),
+            tasks: Boolean(loadingMap["speech:tasks"]),
+          }}
           onAnalyzeAll={() => {
             void runAnalyzeMode(
               "analysis",
@@ -946,6 +1098,9 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
           }}
           onOrganizeAll={() => {
             void handleOrganizeAll();
+          }}
+          onSpeakResult={(key, title, text) => {
+            void handleSpeakGeneralResult(key, title, text);
           }}
           onSummarizeAll={() => {
             void handleSummarizeAll();

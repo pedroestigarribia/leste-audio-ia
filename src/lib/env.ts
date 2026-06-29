@@ -4,6 +4,8 @@ import { z } from "zod";
 
 const DEFAULTS = {
   geminiModel: "gemini-3.5-flash",
+  geminiTtsModel: "gemini-2.5-flash-preview-tts",
+  geminiTtsVoice: "Kore",
   deepSeekBaseUrl: "https://api.deepseek.com",
   deepSeekModel: "deepseek-v4-pro",
   maxParallel: 3,
@@ -15,6 +17,8 @@ const DEFAULTS = {
 const rawEnvSchema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().optional(),
+  GEMINI_TTS_MODEL: z.string().optional(),
+  GEMINI_TTS_VOICE: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_BASE_URL: z.string().optional(),
   DEEPSEEK_MODEL: z.string().optional(),
@@ -34,6 +38,8 @@ export class MissingApiKeyError extends Error {
 type ParsedEnv = {
   geminiApiKey?: string;
   geminiModel: string;
+  geminiTtsModel: string;
+  geminiTtsVoice: string;
   deepSeekApiKey?: string;
   deepSeekBaseUrl: string;
   deepSeekModel: string;
@@ -70,6 +76,8 @@ function readEnv(): ParsedEnv {
   cachedEnv = {
     geminiApiKey: normalizeOptionalString(parsed.GEMINI_API_KEY),
     geminiModel: normalizeOptionalString(parsed.GEMINI_MODEL) ?? DEFAULTS.geminiModel,
+    geminiTtsModel: normalizeOptionalString(parsed.GEMINI_TTS_MODEL) ?? DEFAULTS.geminiTtsModel,
+    geminiTtsVoice: normalizeOptionalString(parsed.GEMINI_TTS_VOICE) ?? DEFAULTS.geminiTtsVoice,
     deepSeekApiKey: normalizeOptionalString(parsed.DEEPSEEK_API_KEY),
     deepSeekBaseUrl:
       normalizeOptionalString(parsed.DEEPSEEK_BASE_URL) ?? DEFAULTS.deepSeekBaseUrl,
@@ -96,6 +104,7 @@ export function getAppConfig() {
   return {
     appName: env.appName,
     geminiModel: env.geminiModel,
+    geminiTtsModel: env.geminiTtsModel,
     deepSeekModel: env.deepSeekModel,
     maxParallelTranscriptions: env.maxParallelTranscriptions,
     maxFileSizeMb: env.maxFileSizeMb,

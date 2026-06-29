@@ -90,6 +90,8 @@ cp .env.example .env.local
 ```env
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.5-flash
+GEMINI_TTS_MODEL=gemini-2.5-flash-preview-tts
+GEMINI_TTS_VOICE=Kore
 
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
@@ -102,7 +104,7 @@ TEMP_UPLOAD_DIR=./tmp/uploads
 APP_NAME=Leste Audio IA
 ```
 
-Se faltar `GEMINI_API_KEY`, a rota de transcrição retorna erro claro.
+Se faltar `GEMINI_API_KEY`, as rotas de transcrição e leitura em voz retornam erro claro.
 
 Se faltar `DEEPSEEK_API_KEY`, as rotas de resumo, organização e análise retornam erro claro.
 
@@ -114,7 +116,8 @@ A interface não cai por causa disso. Ela mostra a mensagem:
 
 1. Gere uma chave no painel da Gemini API / Google AI Studio.
 2. Cole a chave em `GEMINI_API_KEY`.
-3. Mantenha `GEMINI_MODEL=gemini-3.5-flash` ou troque depois, se quiser.
+3. Mantenha `GEMINI_MODEL=gemini-3.5-flash` para transcrição ou troque depois, se quiser.
+4. Para leitura em voz, mantenha `GEMINI_TTS_MODEL=gemini-2.5-flash-preview-tts` e `GEMINI_TTS_VOICE=Kore`, ou ajuste a voz depois.
 
 ## Como obter e configurar a DeepSeek API key
 
@@ -127,6 +130,7 @@ A interface não cai por causa disso. Ela mostra a mensagem:
 ## Modelos usados
 
 - `GEMINI_MODEL=gemini-3.5-flash`
+- `GEMINI_TTS_MODEL=gemini-2.5-flash-preview-tts`
 - `DEEPSEEK_MODEL=deepseek-v4-pro`
 
 ## Como rodar em localhost
@@ -207,6 +211,7 @@ Resposta:
   "ok": true,
   "app": "Leste Audio IA",
   "geminiModel": "gemini-3.5-flash",
+  "geminiTtsModel": "gemini-2.5-flash-preview-tts",
   "deepseekModel": "deepseek-v4-pro"
 }
 ```
@@ -267,6 +272,19 @@ Modos disponíveis:
 ### `POST /api/export-txt`
 
 Rota pronta para gerar TXT no backend, embora o download atual seja feito no frontend para evitar reenvio desnecessário.
+
+### `POST /api/speech`
+
+Entrada:
+
+```json
+{
+  "title": "Resumo geral",
+  "text": "texto para leitura"
+}
+```
+
+Retorna áudio `audio/wav` gerado pelo Gemini TTS. A chave fica apenas no backend.
 
 ## Formatos aceitos
 
@@ -341,6 +359,8 @@ Checklist de deploy via GitHub:
 10. Configure as variáveis de ambiente:
    - `GEMINI_API_KEY`
    - `GEMINI_MODEL`
+   - `GEMINI_TTS_MODEL`
+   - `GEMINI_TTS_VOICE`
    - `DEEPSEEK_API_KEY`
    - `DEEPSEEK_BASE_URL`
    - `DEEPSEEK_MODEL`

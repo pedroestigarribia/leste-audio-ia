@@ -12,6 +12,7 @@ export async function GET() {
     ok: true,
     app: config.appName,
     geminiModel: config.geminiModel,
+    geminiTtsModel: config.geminiTtsModel,
     deepseekModel: config.deepSeekModel,
   });
 }

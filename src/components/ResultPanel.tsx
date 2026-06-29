@@ -1,9 +1,11 @@
 "use client";
 
-import { Copy, Download, Headphones, MessageSquareText, Sparkles } from "lucide-react";
+import { Copy, Download, Headphones, MessageSquareText, Sparkles, Volume2 } from "lucide-react";
 
 import ActionButton from "@/components/ActionButton";
 import ErrorBox from "@/components/ErrorBox";
+
+type GeneralResultKey = "summary" | "organized" | "analysis" | "tasks" | "keyData" | "reply";
 
 type ResultPanelProps = {
   copiedKey: string | null;
@@ -20,6 +22,9 @@ type ResultPanelProps = {
   isReplyLoading: boolean;
   isSummaryLoading: boolean;
   isTasksLoading: boolean;
+  speechAudioUrls: Partial<Record<GeneralResultKey, string>>;
+  speechErrors: Partial<Record<GeneralResultKey, string>>;
+  speechLoadingMap: Partial<Record<GeneralResultKey, boolean>>;
   onAnalyzeAll: () => void;
   onCopyAll: () => void;
   onCopyAnalysis: () => void;
@@ -34,6 +39,7 @@ type ResultPanelProps = {
   onExtractTasks: () => void;
   onGenerateReply: () => void;
   onOrganizeAll: () => void;
+  onSpeakResult: (key: GeneralResultKey, title: string, text: string) => void;
   onSummarizeAll: () => void;
   previewItems: Array<{
     id: string;
@@ -56,27 +62,56 @@ function ResultSection({
   copyLabel,
   copied,
   onCopy,
+  onSpeak,
+  speechError,
+  speechKey,
+  speechLoading,
+  speechUrl,
 }: {
   title: string;
   value: string;
   copyLabel: string;
   copied: boolean;
   onCopy: () => void;
+  onSpeak: (key: GeneralResultKey, title: string, text: string) => void;
+  speechError?: string;
+  speechKey: GeneralResultKey;
+  speechLoading?: boolean;
+  speechUrl?: string;
 }) {
   return (
     <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="text-sm font-semibold uppercase text-slate-500">{title}</h3>
-        <ActionButton className="sm:w-auto" fullWidth onClick={onCopy} type="button" variant="ghost">
-          <Copy className="h-4 w-4" />
-          {copied ? "Copiado" : copyLabel}
-        </ActionButton>
+        <div className="grid gap-2 sm:flex sm:items-center sm:justify-end">
+          <ActionButton
+            className="sm:w-auto"
+            fullWidth
+            loading={speechLoading}
+            onClick={() => onSpeak(speechKey, title, value)}
+            type="button"
+            variant="secondary"
+          >
+            <Volume2 className="h-4 w-4" />
+            {speechUrl ? "Ouvir de novo" : "Ouvir com IA"}
+          </ActionButton>
+          <ActionButton className="sm:w-auto" fullWidth onClick={onCopy} type="button" variant="ghost">
+            <Copy className="h-4 w-4" />
+            {copied ? "Copiado" : copyLabel}
+          </ActionButton>
+        </div>
       </div>
       <textarea
         className="min-h-[200px] w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-800 outline-none focus:border-leste-blue"
         readOnly
         value={value}
       />
+      {speechError ? <ErrorBox message={speechError} /> : null}
+      {speechUrl ? (
+        <audio className="w-full" controls src={speechUrl}>
+          Seu navegador não suporta reprodução de áudio.
+        </audio>
+      ) : null}
     </div>
   );
 }
@@ -142,6 +177,9 @@ export default function ResultPanel({
   isReplyLoading,
   isSummaryLoading,
   isTasksLoading,
+  speechAudioUrls,
+  speechErrors,
+  speechLoadingMap,
   onAnalyzeAll,
   onCopyAll,
   onCopyAnalysis,
@@ -156,6 +194,7 @@ export default function ResultPanel({
   onExtractTasks,
   onGenerateReply,
   onOrganizeAll,
+  onSpeakResult,
   onSummarizeAll,
   previewItems,
   taskErrors,
@@ -287,6 +326,11 @@ export default function ResultPanel({
           copied={copiedKey === "general-summary"}
           copyLabel="Copiar resumo geral"
           onCopy={onCopySummary}
+          onSpeak={onSpeakResult}
+          speechError={speechErrors.summary}
+          speechKey="summary"
+          speechLoading={speechLoadingMap.summary}
+          speechUrl={speechAudioUrls.summary}
           title="Resumo geral"
           value={generalSummary}
         />
@@ -298,6 +342,11 @@ export default function ResultPanel({
           copied={copiedKey === "general-organized"}
           copyLabel="Copiar organização geral"
           onCopy={onCopyOrganized}
+          onSpeak={onSpeakResult}
+          speechError={speechErrors.organized}
+          speechKey="organized"
+          speechLoading={speechLoadingMap.organized}
+          speechUrl={speechAudioUrls.organized}
           title="Organização geral"
           value={generalOrganizedText}
         />
@@ -309,6 +358,11 @@ export default function ResultPanel({
           copied={copiedKey === "general-analysis"}
           copyLabel="Copiar interpretação geral"
           onCopy={onCopyAnalysis}
+          onSpeak={onSpeakResult}
+          speechError={speechErrors.analysis}
+          speechKey="analysis"
+          speechLoading={speechLoadingMap.analysis}
+          speechUrl={speechAudioUrls.analysis}
           title="Interpretação geral"
           value={generalAnalysis}
         />
@@ -320,6 +374,11 @@ export default function ResultPanel({
           copied={copiedKey === "general-tasks"}
           copyLabel="Copiar tarefas"
           onCopy={onCopyTasks}
+          onSpeak={onSpeakResult}
+          speechError={speechErrors.tasks}
+          speechKey="tasks"
+          speechLoading={speechLoadingMap.tasks}
+          speechUrl={speechAudioUrls.tasks}
           title="Tarefas e pendências"
           value={generalTasks}
         />
@@ -331,6 +390,11 @@ export default function ResultPanel({
           copied={copiedKey === "general-keyData"}
           copyLabel="Copiar dados-chave"
           onCopy={onCopyKeyData}
+          onSpeak={onSpeakResult}
+          speechError={speechErrors.keyData}
+          speechKey="keyData"
+          speechLoading={speechLoadingMap.keyData}
+          speechUrl={speechAudioUrls.keyData}
           title="Dados-chave"
           value={generalKeyData}
         />
@@ -342,6 +406,11 @@ export default function ResultPanel({
           copied={copiedKey === "general-reply"}
           copyLabel="Copiar resposta WhatsApp"
           onCopy={onCopyReply}
+          onSpeak={onSpeakResult}
+          speechError={speechErrors.reply}
+          speechKey="reply"
+          speechLoading={speechLoadingMap.reply}
+          speechUrl={speechAudioUrls.reply}
           title="Resposta pronta para WhatsApp"
           value={generalReply}
         />
