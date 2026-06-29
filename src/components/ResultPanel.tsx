@@ -162,6 +162,71 @@ function AudioPlaylist({
   );
 }
 
+function SpeechQuickActions({
+  results,
+  speechAudioUrls,
+  speechLoadingMap,
+  onSpeak,
+}: {
+  results: Array<{
+    key: GeneralResultKey;
+    label: string;
+    text: string;
+  }>;
+  speechAudioUrls: Partial<Record<GeneralResultKey, string>>;
+  speechLoadingMap: Partial<Record<GeneralResultKey, boolean>>;
+  onSpeak: (key: GeneralResultKey, title: string, text: string) => void;
+}) {
+  const hasAnyResult = results.some((result) => result.text.trim());
+
+  return (
+    <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-black uppercase text-leste-blue">
+            Leitura com voz IA
+          </h3>
+          <p className="mt-1 text-sm text-slate-600">
+            Depois de gerar resumo, organização ou interpretação, clique para ouvir o texto em voz.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold uppercase text-slate-500">
+          <Volume2 className="h-4 w-4 text-leste-blue" />
+          Gemini TTS
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {results.map((result) => {
+          const hasText = Boolean(result.text.trim());
+          const hasAudio = Boolean(speechAudioUrls[result.key]);
+
+          return (
+            <ActionButton
+              disabled={!hasText}
+              fullWidth
+              key={result.key}
+              loading={speechLoadingMap[result.key]}
+              onClick={() => onSpeak(result.key, result.label, result.text)}
+              type="button"
+              variant={hasText ? "secondary" : "ghost"}
+            >
+              <Volume2 className="h-4 w-4" />
+              {hasAudio ? `Ouvir de novo: ${result.label}` : `Ouvir ${result.label}`}
+            </ActionButton>
+          );
+        })}
+      </div>
+
+      {!hasAnyResult ? (
+        <p className="mt-3 text-xs text-slate-500">
+          Os botões ficam disponíveis quando algum texto geral for gerado.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ResultPanel({
   copiedKey,
   generalAnalysis,
@@ -199,6 +264,15 @@ export default function ResultPanel({
   previewItems,
   taskErrors,
 }: ResultPanelProps) {
+  const speechResults = [
+    { key: "summary" as const, label: "resumo geral", text: generalSummary },
+    { key: "organized" as const, label: "organização geral", text: generalOrganizedText },
+    { key: "analysis" as const, label: "interpretação geral", text: generalAnalysis },
+    { key: "tasks" as const, label: "tarefas", text: generalTasks },
+    { key: "keyData" as const, label: "dados-chave", text: generalKeyData },
+    { key: "reply" as const, label: "resposta WhatsApp", text: generalReply },
+  ];
+
   return (
     <section className="space-y-5 rounded-lg border border-blue-100 bg-white p-4 shadow-editorial sm:p-6">
       <div className="space-y-5">
@@ -306,6 +380,13 @@ export default function ResultPanel({
           </ActionButton>
         </div>
       </div>
+
+      <SpeechQuickActions
+        onSpeak={onSpeakResult}
+        results={speechResults}
+        speechAudioUrls={speechAudioUrls}
+        speechLoadingMap={speechLoadingMap}
+      />
 
       {!generalSummary &&
       !generalOrganizedText &&
