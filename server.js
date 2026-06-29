@@ -20,6 +20,27 @@ function findFirstFile(directory, matcher) {
   }
 }
 
+function buildCacheRefreshScript() {
+  return `
+(() => {
+  const target = "/?v=" + Date.now();
+
+  try {
+    const key = "leste-audio-refresh-at";
+    const now = Date.now();
+    const lastRefresh = Number(window.sessionStorage.getItem(key) || 0);
+
+    if (now - lastRefresh > 5000) {
+      window.sessionStorage.setItem(key, String(now));
+      window.location.replace(target);
+    }
+  } catch {
+    window.location.href = target;
+  }
+})();
+`;
+}
+
 function getLegacyAssetFallback(requestUrl) {
   const pathname = new URL(requestUrl || "/", "http://localhost").pathname;
 
@@ -36,40 +57,44 @@ function getLegacyAssetFallback(requestUrl) {
   }
 
   if (/^\/_next\/static\/chunks\/app\/page-[^/]+\.js$/.test(pathname)) {
-    const pageChunk = findFirstFile(path.join(nextStaticDir, "chunks", "app"), (fileName) =>
-      /^page-[\w-]+\.js$/.test(fileName),
-    );
-    return pageChunk
-      ? {
-          contentType: "application/javascript; charset=utf-8",
-          filePath: path.join(nextStaticDir, "chunks", "app", pageChunk),
-        }
-      : undefined;
+    return {
+      body: buildCacheRefreshScript(),
+      cacheControl: "no-store, max-age=0",
+      contentType: "application/javascript; charset=utf-8",
+    };
   }
 
-  if (/^\/_next\/static\/chunks\/(?:491|771)-[^/]+\.js$/.test(pathname)) {
-    const clientChunk = findFirstFile(path.join(nextStaticDir, "chunks"), (fileName) =>
-      /^498-[\w-]+\.js$/.test(fileName),
-    );
-    return clientChunk
-      ? {
-          contentType: "application/javascript; charset=utf-8",
-          filePath: path.join(nextStaticDir, "chunks", clientChunk),
-        }
-      : undefined;
+  if (/^\/_next\/static\/chunks\/\d+-[^/]+\.js$/.test(pathname)) {
+    return {
+      body: buildCacheRefreshScript(),
+      cacheControl: "no-store, max-age=0",
+      contentType: "application/javascript; charset=utf-8",
+    };
   }
 
   return undefined;
 }
 
 function serveFile(res, fallback) {
-  if (!fallback || !existsSync(fallback.filePath)) {
+  if (!fallback) {
+    return false;
+  }
+
+  if (fallback.body) {
+    res.statusCode = 200;
+    res.setHeader("Content-Type", fallback.contentType);
+    res.setHeader("Cache-Control", fallback.cacheControl || "no-store, max-age=0");
+    res.end(fallback.body);
+    return true;
+  }
+
+  if (!existsSync(fallback.filePath)) {
     return false;
   }
 
   res.statusCode = 200;
   res.setHeader("Content-Type", fallback.contentType);
-  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  res.setHeader("Cache-Control", fallback.cacheControl || "public, max-age=31536000, immutable");
   createReadStream(fallback.filePath).pipe(res);
   return true;
 }
