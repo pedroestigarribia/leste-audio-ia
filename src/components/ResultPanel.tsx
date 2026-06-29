@@ -194,7 +194,7 @@ function SpeechQuickActions({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-sm font-black uppercase text-leste-blue">
-            Leitura com voz IA
+            Leitura com voz da Milena
           </h3>
           <p className="mt-1 text-sm text-slate-600">
             A Milena lê os textos gerados pela IA. Use o player para pausar e o botão Parar para encerrar.

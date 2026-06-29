@@ -197,7 +197,7 @@ export default function PdfPanel({
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="text-sm font-black uppercase text-leste-blue">
-                  Leitura com voz IA
+                  Leitura com voz da Milena
                 </h3>
                 <p className="mt-1 text-sm text-slate-700">
                   A Milena lê o texto do PDF e os conteúdos tratados pela IA. Use o player para

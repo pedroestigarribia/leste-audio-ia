@@ -285,7 +285,7 @@ Entrada:
 }
 ```
 
-Retorna áudio para a leitura com voz IA da Milena. O app tenta entregar `audio/mpeg` em MP3. Se o FFmpeg não estiver disponível no ambiente, retorna WAV como fallback.
+Retorna áudio para a leitura com voz da Milena. O app tenta entregar `audio/mpeg` em MP3. Se o FFmpeg não estiver disponível no ambiente, retorna WAV como fallback.
 
 ### `POST /api/pdf-extract`
 
@@ -466,7 +466,7 @@ Plano B via ZIP:
 - [ ] Baixar organização geral em TXT
 - [ ] Baixar organização geral em DOCX
 - [ ] Ouvir os áudios no painel geral
-- [ ] Gerar leitura com voz IA da Milena
+- [ ] Gerar leitura com voz da Milena
 - [ ] Pausar e parar a leitura da Milena pelo player
 - [ ] Baixar a leitura da Milena em MP3 ou WAV fallback
 - [ ] Enviar PDF

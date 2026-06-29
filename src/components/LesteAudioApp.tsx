@@ -569,7 +569,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     const url = speechAudioUrlsRef.current[key];
 
     if (!url) {
-      setAppError("Gere a leitura com voz IA antes de baixar o audio.");
+      setAppError("Gere a leitura com voz da Milena antes de baixar o audio.");
       return;
     }
 
