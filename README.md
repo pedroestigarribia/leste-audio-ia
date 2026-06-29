@@ -280,11 +280,36 @@ Entrada:
 ```json
 {
   "title": "Resumo geral",
-  "text": "texto para leitura"
+  "text": "texto para leitura",
+  "format": "mp3"
 }
 ```
 
-Retorna áudio `audio/wav` gerado pelo Gemini TTS. A chave fica apenas no backend.
+Retorna áudio para a leitura com voz IA da Milena. O app tenta entregar `audio/mpeg` em MP3. Se o FFmpeg não estiver disponível no ambiente, retorna WAV como fallback.
+
+### `POST /api/pdf-extract`
+
+- Entrada: `multipart/form-data`
+- Campo: `file`
+- Responsabilidade: validar PDF, extrair texto pesquisável e retornar o conteúdo para a sessão atual.
+
+### `POST /api/pdf-process`
+
+Entrada:
+
+```json
+{
+  "text": "texto extraído do PDF",
+  "mode": "summary"
+}
+```
+
+Modos disponíveis:
+
+- `summary`
+- `organize`
+- `grammar`
+- `clean`
 
 ## Formatos aceitos
 
@@ -316,7 +341,9 @@ Além da lista principal pedida, o projeto usa:
 
 - `docx`: para gerar download `.docx` no frontend sem reenviar o conteúdo ao backend.
 - `execa`: para executar `ffmpeg-static` ou `ffmpeg` do sistema com menos acoplamento.
+- `pdf-parse`: para extrair texto pesquisável de PDFs no backend.
 - `@types/node`, `@types/react`, `@types/react-dom`: suporte de tipagem para TypeScript.
+- `@types/pdf-parse`: suporte de tipagem para leitura de PDF.
 - `eslint` e `eslint-config-next`: necessários para `npm run lint`.
 
 ## Como subir para GitHub
@@ -439,6 +466,13 @@ Plano B via ZIP:
 - [ ] Baixar organização geral em TXT
 - [ ] Baixar organização geral em DOCX
 - [ ] Ouvir os áudios no painel geral
+- [ ] Gerar leitura com voz IA da Milena
+- [ ] Pausar e parar a leitura da Milena pelo player
+- [ ] Baixar a leitura da Milena em MP3 ou WAV fallback
+- [ ] Enviar PDF
+- [ ] Ver texto extraído do PDF no painel
+- [ ] Resumir, organizar, ajustar gramática e limpar texto do PDF
+- [ ] Ouvir texto do PDF com a Milena
 - [ ] Limpar tudo
 - [ ] Confirmar que arquivos temporários foram apagados
 - [ ] Confirmar que `.env.local` não foi versionado

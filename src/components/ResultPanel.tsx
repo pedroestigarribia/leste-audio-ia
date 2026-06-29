@@ -8,6 +8,7 @@ import ErrorBox from "@/components/ErrorBox";
 type GeneralResultKey = "summary" | "organized" | "analysis" | "tasks" | "keyData" | "reply";
 
 type ResultPanelProps = {
+  activeSpeechKey: string | null;
   copiedKey: string | null;
   generalAnalysis: string;
   generalKeyData: string;
@@ -22,7 +23,8 @@ type ResultPanelProps = {
   isReplyLoading: boolean;
   isSummaryLoading: boolean;
   isTasksLoading: boolean;
-  speechAudioUrls: Partial<Record<GeneralResultKey, string>>;
+  speechAudioUrls: Record<string, string | undefined>;
+  speechAudioTypes: Record<string, string | undefined>;
   speechErrors: Partial<Record<GeneralResultKey, string>>;
   speechLoadingMap: Partial<Record<GeneralResultKey, boolean>>;
   onAnalyzeAll: () => void;
@@ -35,11 +37,13 @@ type ResultPanelProps = {
   onCopyTasks: () => void;
   onDownloadOrganizedDocx: () => void;
   onDownloadOrganizedTxt: () => void;
+  onDownloadSpeech: (key: string, label: string) => void;
   onExtractKeyData: () => void;
   onExtractTasks: () => void;
   onGenerateReply: () => void;
   onOrganizeAll: () => void;
   onSpeakResult: (key: GeneralResultKey, title: string, text: string) => void;
+  onStopSpeech: () => void;
   onSummarizeAll: () => void;
   previewItems: Array<{
     id: string;
@@ -66,7 +70,6 @@ function ResultSection({
   speechError,
   speechKey,
   speechLoading,
-  speechUrl,
 }: {
   title: string;
   value: string;
@@ -77,7 +80,6 @@ function ResultSection({
   speechError?: string;
   speechKey: GeneralResultKey;
   speechLoading?: boolean;
-  speechUrl?: string;
 }) {
   return (
     <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
@@ -93,7 +95,7 @@ function ResultSection({
             variant="secondary"
           >
             <Volume2 className="h-4 w-4" />
-            {speechUrl ? "Ouvir de novo" : "Ouvir com IA"}
+            Ouvir com Milena
           </ActionButton>
           <ActionButton className="sm:w-auto" fullWidth onClick={onCopy} type="button" variant="ghost">
             <Copy className="h-4 w-4" />
@@ -107,11 +109,6 @@ function ResultSection({
         value={value}
       />
       {speechError ? <ErrorBox message={speechError} /> : null}
-      {speechUrl ? (
-        <audio className="w-full" controls src={speechUrl}>
-          Seu navegador não suporta reprodução de áudio.
-        </audio>
-      ) : null}
     </div>
   );
 }
@@ -163,21 +160,34 @@ function AudioPlaylist({
 }
 
 function SpeechQuickActions({
+  activeSpeechKey,
   results,
+  speechAudioTypes,
   speechAudioUrls,
   speechLoadingMap,
+  onDownloadSpeech,
   onSpeak,
+  onStopSpeech,
 }: {
+  activeSpeechKey: string | null;
   results: Array<{
     key: GeneralResultKey;
     label: string;
     text: string;
   }>;
-  speechAudioUrls: Partial<Record<GeneralResultKey, string>>;
+  speechAudioTypes: Record<string, string | undefined>;
+  speechAudioUrls: Record<string, string | undefined>;
   speechLoadingMap: Partial<Record<GeneralResultKey, boolean>>;
+  onDownloadSpeech: (key: string, label: string) => void;
   onSpeak: (key: GeneralResultKey, title: string, text: string) => void;
+  onStopSpeech: () => void;
 }) {
   const hasAnyResult = results.some((result) => result.text.trim());
+  const activeResult = results.find((result) => result.key === activeSpeechKey);
+  const activeUrl = activeResult ? speechAudioUrls[activeResult.key] : undefined;
+  const activeContentType = activeResult ? speechAudioTypes[activeResult.key] : undefined;
+  const activeExtension =
+    activeContentType?.includes("mpeg") || activeContentType?.includes("mp3") ? "MP3" : "WAV";
 
   return (
     <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-4">
@@ -187,12 +197,12 @@ function SpeechQuickActions({
             Leitura com voz IA
           </h3>
           <p className="mt-1 text-sm text-slate-600">
-            Depois de gerar resumo, organização ou interpretação, clique para ouvir o texto em voz.
+            A Milena lê os textos gerados pela IA. Use o player para pausar e o botão Parar para encerrar.
           </p>
         </div>
         <div className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold uppercase text-slate-500">
           <Volume2 className="h-4 w-4 text-leste-blue" />
-          Gemini TTS
+          Milena
         </div>
       </div>
 
@@ -223,11 +233,39 @@ function SpeechQuickActions({
           Os botões ficam disponíveis quando algum texto geral for gerado.
         </p>
       ) : null}
+
+      {activeResult && activeUrl ? (
+        <div className="mt-4 space-y-3 rounded-lg border border-amber-200 bg-white p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-semibold text-slate-700">
+              Milena lendo: {activeResult.label}
+            </p>
+            <div className="grid gap-2 sm:flex">
+              <ActionButton className="sm:w-auto" fullWidth onClick={onStopSpeech} type="button" variant="ghost">
+                Parar
+              </ActionButton>
+              <ActionButton
+                className="sm:w-auto"
+                fullWidth
+                onClick={() => onDownloadSpeech(activeResult.key, activeResult.label)}
+                type="button"
+                variant="secondary"
+              >
+                Baixar {activeExtension}
+              </ActionButton>
+            </div>
+          </div>
+          <audio autoPlay className="w-full" controls src={activeUrl}>
+            Seu navegador não suporta reprodução de áudio.
+          </audio>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 export default function ResultPanel({
+  activeSpeechKey,
   copiedKey,
   generalAnalysis,
   generalKeyData,
@@ -243,6 +281,7 @@ export default function ResultPanel({
   isSummaryLoading,
   isTasksLoading,
   speechAudioUrls,
+  speechAudioTypes,
   speechErrors,
   speechLoadingMap,
   onAnalyzeAll,
@@ -255,11 +294,13 @@ export default function ResultPanel({
   onCopyTasks,
   onDownloadOrganizedDocx,
   onDownloadOrganizedTxt,
+  onDownloadSpeech,
   onExtractKeyData,
   onExtractTasks,
   onGenerateReply,
   onOrganizeAll,
   onSpeakResult,
+  onStopSpeech,
   onSummarizeAll,
   previewItems,
   taskErrors,
@@ -382,8 +423,12 @@ export default function ResultPanel({
       </div>
 
       <SpeechQuickActions
+        activeSpeechKey={activeSpeechKey}
+        onDownloadSpeech={onDownloadSpeech}
         onSpeak={onSpeakResult}
+        onStopSpeech={onStopSpeech}
         results={speechResults}
+        speechAudioTypes={speechAudioTypes}
         speechAudioUrls={speechAudioUrls}
         speechLoadingMap={speechLoadingMap}
       />
@@ -411,7 +456,6 @@ export default function ResultPanel({
           speechError={speechErrors.summary}
           speechKey="summary"
           speechLoading={speechLoadingMap.summary}
-          speechUrl={speechAudioUrls.summary}
           title="Resumo geral"
           value={generalSummary}
         />
@@ -427,7 +471,6 @@ export default function ResultPanel({
           speechError={speechErrors.organized}
           speechKey="organized"
           speechLoading={speechLoadingMap.organized}
-          speechUrl={speechAudioUrls.organized}
           title="Organização geral"
           value={generalOrganizedText}
         />
@@ -443,7 +486,6 @@ export default function ResultPanel({
           speechError={speechErrors.analysis}
           speechKey="analysis"
           speechLoading={speechLoadingMap.analysis}
-          speechUrl={speechAudioUrls.analysis}
           title="Interpretação geral"
           value={generalAnalysis}
         />
@@ -459,7 +501,6 @@ export default function ResultPanel({
           speechError={speechErrors.tasks}
           speechKey="tasks"
           speechLoading={speechLoadingMap.tasks}
-          speechUrl={speechAudioUrls.tasks}
           title="Tarefas e pendências"
           value={generalTasks}
         />
@@ -475,7 +516,6 @@ export default function ResultPanel({
           speechError={speechErrors.keyData}
           speechKey="keyData"
           speechLoading={speechLoadingMap.keyData}
-          speechUrl={speechAudioUrls.keyData}
           title="Dados-chave"
           value={generalKeyData}
         />
@@ -491,7 +531,6 @@ export default function ResultPanel({
           speechError={speechErrors.reply}
           speechKey="reply"
           speechLoading={speechLoadingMap.reply}
-          speechUrl={speechAudioUrls.reply}
           title="Resposta pronta para WhatsApp"
           value={generalReply}
         />

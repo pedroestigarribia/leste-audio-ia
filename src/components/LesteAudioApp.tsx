@@ -8,9 +8,11 @@ import ActionButton from "@/components/ActionButton";
 import AppHeader from "@/components/AppHeader";
 import AudioList from "@/components/AudioList";
 import ErrorBox from "@/components/ErrorBox";
+import PdfPanel from "@/components/PdfPanel";
 import ProgressBar from "@/components/ProgressBar";
 import ResultPanel from "@/components/ResultPanel";
 import UploadArea from "@/components/UploadArea";
+import type { PdfResultKey, PdfSpeechKey } from "@/components/PdfPanel";
 import {
   ALLOWED_AUDIO_EXTENSIONS,
   getFileExtension,
@@ -47,6 +49,7 @@ type LesteAudioAppProps = {
 };
 
 type GeneralResultKey = "summary" | "organized" | "analysis" | "tasks" | "keyData" | "reply";
+type SpeechTargetKey = GeneralResultKey | PdfSpeechKey;
 
 const EMPTY_GENERAL_RESULTS: Record<GeneralResultKey, string> = {
   summary: "",
@@ -55,6 +58,20 @@ const EMPTY_GENERAL_RESULTS: Record<GeneralResultKey, string> = {
   tasks: "",
   keyData: "",
   reply: "",
+};
+
+const EMPTY_PDF_RESULTS: Record<PdfResultKey, string> = {
+  summary: "",
+  organized: "",
+  grammar: "",
+  clean: "",
+};
+
+type PdfState = {
+  fileName: string;
+  fileSize: number;
+  text: string;
+  results: Record<PdfResultKey, string>;
 };
 
 function sleep(ms: number) {
@@ -93,18 +110,19 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   const [taskErrors, setTaskErrors] = useState<Record<string, string | undefined>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [appError, setAppError] = useState<string | null>(null);
+  const [pdfState, setPdfState] = useState<PdfState | null>(null);
+  const [pdfError, setPdfError] = useState<string | undefined>();
   const [audioPreviewUrls, setAudioPreviewUrls] = useState<Record<string, string>>({});
-  const [speechAudioUrls, setSpeechAudioUrls] = useState<Partial<Record<GeneralResultKey, string>>>(
-    {},
-  );
-  const [speechErrors, setSpeechErrors] = useState<Partial<Record<GeneralResultKey, string>>>({});
+  const [speechAudioUrls, setSpeechAudioUrls] = useState<Record<string, string | undefined>>({});
+  const [speechAudioTypes, setSpeechAudioTypes] = useState<Record<string, string | undefined>>({});
+  const [speechErrors, setSpeechErrors] = useState<Record<string, string | undefined>>({});
+  const [activeSpeechKey, setActiveSpeechKey] = useState<string | null>(null);
 
   const itemsRef = useRef<AudioItem[]>([]);
   const cancelledIdsRef = useRef<Set<string>>(new Set());
   const addMoreInputRef = useRef<HTMLInputElement | null>(null);
   const audioPreviewUrlsRef = useRef<Record<string, string>>({});
-  const speechAudioUrlsRef = useRef<Partial<Record<GeneralResultKey, string>>>({});
-  const activeSpeechRef = useRef<HTMLAudioElement | null>(null);
+  const speechAudioUrlsRef = useRef<Record<string, string | undefined>>({});
 
   useEffect(() => {
     itemsRef.current = items;
@@ -185,7 +203,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     });
   }
 
-  function clearSpeechResult(key: GeneralResultKey) {
+  function clearSpeechResult(key: SpeechTargetKey) {
     setSpeechErrors((current) => {
       const nextState = { ...current };
       delete nextState[key];
@@ -203,12 +221,17 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       delete nextState[key];
       return nextState;
     });
+
+    setSpeechAudioTypes((current) => {
+      const nextState = { ...current };
+      delete nextState[key];
+      return nextState;
+    });
+
+    setActiveSpeechKey((current) => (current === key ? null : current));
   }
 
   function clearAllSpeechResults() {
-    activeSpeechRef.current?.pause();
-    activeSpeechRef.current = null;
-
     for (const url of Object.values(speechAudioUrlsRef.current)) {
       if (url) {
         URL.revokeObjectURL(url);
@@ -216,7 +239,9 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     }
 
     setSpeechAudioUrls({});
+    setSpeechAudioTypes({});
     setSpeechErrors({});
+    setActiveSpeechKey(null);
   }
 
   function clearAggregateResults() {
@@ -461,14 +486,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     return normalizePlainText(payload.result);
   }
 
-  async function playSpeechUrl(url: string) {
-    activeSpeechRef.current?.pause();
-    const audio = new Audio(url);
-    activeSpeechRef.current = audio;
-    await audio.play();
-  }
-
-  async function handleSpeakGeneralResult(key: GeneralResultKey, title: string, text: string) {
+  async function handleSpeakText(key: SpeechTargetKey, title: string, text: string) {
     const normalizedText = normalizePlainText(text);
 
     if (!normalizedText) {
@@ -479,14 +497,10 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     const existingUrl = speechAudioUrlsRef.current[key];
 
     if (existingUrl) {
-      try {
-        await playSpeechUrl(existingUrl);
-      } catch {
-        setSpeechErrors((current) => ({
-          ...current,
-          [key]: "Nao foi possivel iniciar o audio automaticamente. Use o player abaixo.",
-        }));
-      }
+      setActiveSpeechKey(null);
+      window.setTimeout(() => {
+        setActiveSpeechKey(key);
+      }, 0);
       return;
     }
 
@@ -504,6 +518,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          format: "mp3",
           title,
           text: normalizedText,
         }),
@@ -516,6 +531,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
+      const contentType = blob.type || response.headers.get("Content-Type") || "audio/wav";
 
       setSpeechAudioUrls((current) => {
         const currentUrl = current[key];
@@ -530,14 +546,11 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         };
       });
 
-      try {
-        await playSpeechUrl(url);
-      } catch {
-        setSpeechErrors((current) => ({
-          ...current,
-          [key]: "Audio gerado. Se nao tocar automaticamente, use o player abaixo.",
-        }));
-      }
+      setSpeechAudioTypes((current) => ({
+        ...current,
+        [key]: contentType,
+      }));
+      setActiveSpeechKey(key);
     } catch (error) {
       setSpeechErrors((current) => ({
         ...current,
@@ -546,6 +559,32 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     } finally {
       setLoadingState(`speech:${key}`, false);
     }
+  }
+
+  function handleStopSpeech() {
+    setActiveSpeechKey(null);
+  }
+
+  function handleDownloadSpeech(key: string, label: string) {
+    const url = speechAudioUrlsRef.current[key];
+
+    if (!url) {
+      setAppError("Gere a leitura com voz IA antes de baixar o audio.");
+      return;
+    }
+
+    const contentType = speechAudioTypes[key] ?? "";
+    const extension = contentType.includes("mpeg") || contentType.includes("mp3") ? "mp3" : "wav";
+    const safeLabel = label
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .toLowerCase();
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `milena-${safeLabel || "voz-ia"}.${extension}`;
+    anchor.click();
   }
 
   async function handleSummarizeItem(itemId: string) {
@@ -814,6 +853,107 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     downloadBlob(blob, `${buildExportFileBaseName(new Date())}-organizacao-geral.docx`);
   }
 
+  function clearPdfSpeechResults() {
+    (["pdf-original", "pdf-summary", "pdf-organized", "pdf-grammar", "pdf-clean"] as const).forEach(
+      clearSpeechResult,
+    );
+  }
+
+  async function handlePdfSelected(file: File) {
+    const extension = file.name.toLowerCase().split(".").pop();
+    const maxFileSizeBytes = config.maxFileSizeMb * 1024 * 1024;
+
+    setPdfError(undefined);
+
+    if (extension !== "pdf" && file.type !== "application/pdf") {
+      setPdfError("Envie um arquivo PDF valido.");
+      return;
+    }
+
+    if (file.size > maxFileSizeBytes) {
+      setPdfError(`PDF acima do limite de ${config.maxFileSizeMb} MB.`);
+      return;
+    }
+
+    setLoadingState("pdf:extract", true);
+    clearPdfSpeechResults();
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/pdf-extract", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json()) as {
+        ok: boolean;
+        text?: string;
+        error?: string;
+        meta?: {
+          fileName: string;
+          size: number;
+        };
+      };
+
+      if (!response.ok || !payload.ok || !payload.text) {
+        throw new Error(payload.error || "Falha ao extrair texto do PDF.");
+      }
+
+      setPdfState({
+        fileName: payload.meta?.fileName ?? file.name,
+        fileSize: payload.meta?.size ?? file.size,
+        text: normalizePlainText(payload.text),
+        results: EMPTY_PDF_RESULTS,
+      });
+    } catch (error) {
+      setPdfError(buildApiErrorMessage(error));
+    } finally {
+      setLoadingState("pdf:extract", false);
+    }
+  }
+
+  async function handleProcessPdf(mode: PdfResultKey) {
+    if (!pdfState?.text) {
+      setPdfError("Envie um PDF antes de usar a IA.");
+      return;
+    }
+
+    const loadingKey = `pdf:${mode}`;
+    setLoadingState(loadingKey, true);
+    setPdfError(undefined);
+    clearSpeechResult(`pdf-${mode}` as PdfSpeechKey);
+
+    try {
+      const result = await runTextTask("/api/pdf-process", {
+        text: pdfState.text,
+        mode,
+      });
+
+      setPdfState((current) =>
+        current
+          ? {
+              ...current,
+              results: {
+                ...current.results,
+                [mode]: result,
+              },
+            }
+          : current,
+      );
+    } catch (error) {
+      setPdfError(buildApiErrorMessage(error));
+    } finally {
+      setLoadingState(loadingKey, false);
+    }
+  }
+
+  function handleClearPdf() {
+    clearPdfSpeechResults();
+    setPdfState(null);
+    setPdfError(undefined);
+  }
+
   function handleRemoveItem(itemId: string) {
     const item = getCurrentItem(itemId);
 
@@ -846,6 +986,8 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       setGeneralResults(EMPTY_GENERAL_RESULTS);
       setLoadingMap({});
       setTaskErrors({});
+      setPdfState(null);
+      setPdfError(undefined);
       setSpeechErrors({});
       setCopiedKey(null);
       setAppError(null);
@@ -978,6 +1120,37 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
           {appError ? <ErrorBox message={appError} /> : null}
         </section>
 
+        <PdfPanel
+          activeSpeechKey={activeSpeechKey}
+          copiedKey={copiedKey}
+          error={pdfError}
+          loadingMap={loadingMap}
+          onClearPdf={handleClearPdf}
+          onCopy={(key, text) => {
+            void handleCopy(key, text);
+          }}
+          onDownloadSpeech={handleDownloadSpeech}
+          onPdfSelected={(file) => {
+            void handlePdfSelected(file);
+          }}
+          onProcessPdf={(mode) => {
+            void handleProcessPdf(mode);
+          }}
+          onSpeak={(key, title, text) => {
+            void handleSpeakText(key, title, text);
+          }}
+          onStopSpeech={handleStopSpeech}
+          pdf={pdfState}
+          speechAudioTypes={speechAudioTypes}
+          speechAudioUrls={speechAudioUrls}
+          speechErrors={speechErrors}
+          speechLoadingMap={Object.fromEntries(
+            Object.entries(loadingMap)
+              .filter(([key]) => key.startsWith("speech:"))
+              .map(([key, value]) => [key.slice("speech:".length), value]),
+          )}
+        />
+
         <AudioList
           copiedKey={copiedKey}
           items={items}
@@ -1017,6 +1190,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         />
 
         <ResultPanel
+          activeSpeechKey={activeSpeechKey}
           copiedKey={copiedKey}
           generalAnalysis={generalResults.analysis}
           generalKeyData={generalResults.keyData}
@@ -1032,6 +1206,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
           isSummaryLoading={Boolean(loadingMap["summary:all"])}
           isTasksLoading={Boolean(loadingMap["tasks:all"])}
           speechAudioUrls={speechAudioUrls}
+          speechAudioTypes={speechAudioTypes}
           speechErrors={speechErrors}
           speechLoadingMap={{
             analysis: Boolean(loadingMap["speech:analysis"]),
@@ -1072,6 +1247,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
             void handleDownloadOrganizedDocx();
           }}
           onDownloadOrganizedTxt={handleDownloadOrganizedTxt}
+          onDownloadSpeech={handleDownloadSpeech}
           onExtractKeyData={() => {
             void runAnalyzeMode(
               "keyData",
@@ -1100,8 +1276,9 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
             void handleOrganizeAll();
           }}
           onSpeakResult={(key, title, text) => {
-            void handleSpeakGeneralResult(key, title, text);
+            void handleSpeakText(key, title, text);
           }}
+          onStopSpeech={handleStopSpeech}
           onSummarizeAll={() => {
             void handleSummarizeAll();
           }}

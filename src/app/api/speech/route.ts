@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 const speechSchema = z.object({
   text: z.string().trim().min(1, "Envie um texto para leitura.").max(8000, "Texto muito longo para leitura em voz."),
   title: z.string().trim().max(120).optional(),
+  format: z.enum(["mp3", "wav"]).optional().default("mp3"),
 });
 
 function buildJsonError(message: string, status: number) {
@@ -38,13 +39,29 @@ export async function POST(request: Request) {
       `${intro}Leia em portugues brasileiro, com voz natural e ritmo claro:\n\n${cleanedText}`,
     );
 
-    const audioBody = new Uint8Array(result.audio);
+    let audio = result.audio;
+    let contentType = result.contentType;
+    const headers: Record<string, string> = {
+      "Cache-Control": "no-store",
+    };
+
+    if (parsedBody.data.format === "mp3" && result.contentType === "audio/wav") {
+      try {
+        const { convertWavBufferToMp3 } = await import("@/lib/audio-convert");
+        audio = await convertWavBufferToMp3(result.audio);
+        contentType = "audio/mpeg";
+      } catch {
+        headers["X-Audio-Fallback"] = "wav";
+      }
+    }
+
+    const audioBody = new Uint8Array(audio);
 
     return new NextResponse(audioBody, {
       status: 200,
       headers: {
-        "Cache-Control": "no-store",
-        "Content-Type": result.contentType,
+        ...headers,
+        "Content-Type": contentType,
       },
     });
   } catch (error) {
