@@ -1,12 +1,11 @@
 import "server-only";
 
 import { existsSync, promises as fs } from "fs";
+import os from "os";
 import path from "path";
 
 import { execa } from "execa";
 import ffmpegStatic from "ffmpeg-static";
-
-import { cleanupFiles, ensureTempDir } from "@/lib/temp-files";
 
 async function runFfmpeg(binaryPath: string, args: string[]) {
   await execa(binaryPath, args, {
@@ -65,8 +64,7 @@ export async function convertToWav(inputPath: string): Promise<string> {
 }
 
 export async function convertWavBufferToMp3(input: Buffer): Promise<Buffer> {
-  const tempDir = await ensureTempDir();
-  const conversionDir = await fs.mkdtemp(path.join(tempDir, "speech-"));
+  const conversionDir = await fs.mkdtemp(path.join(os.tmpdir(), "leste-audio-speech-"));
   const inputPath = path.join(conversionDir, "input.wav");
   const outputPath = path.join(conversionDir, "output.mp3");
   const args = [
@@ -88,7 +86,6 @@ export async function convertWavBufferToMp3(input: Buffer): Promise<Buffer> {
     await runFfmpegWithFallback(args);
     return await fs.readFile(outputPath);
   } finally {
-    await cleanupFiles([inputPath, outputPath]);
     await fs.rm(conversionDir, { force: true, recursive: true });
   }
 }
