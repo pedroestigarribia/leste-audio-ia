@@ -301,6 +301,13 @@ Entrada:
 
 Retorna áudio para a leitura com voz da Milena. O app entrega `audio/mpeg` em MP3. Se a conversão para MP3 falhar, a rota retorna erro claro em vez de baixar WAV.
 
+Observações:
+
+- A rota aceita textos de até 24.000 caracteres.
+- Textos longos de PDF, resumo geral, organização geral, texto livre e imagem são divididos em blocos menores.
+- Os blocos de voz são reunidos e convertidos em um único MP3 para download.
+- A conversão usa `ffmpeg-static` ou `ffmpeg` do sistema.
+
 ### `POST /api/image-extract`
 
 - Entrada: `multipart/form-data`
@@ -425,6 +432,7 @@ Checklist de deploy via GitHub:
 11. Configure o domínio `lesteaudio.space` para apontar para o projeto publicado.
 12. Verifique se o ambiente suporta `ffmpeg-static`.
 13. Se FFmpeg falhar, instale FFmpeg no VPS ou ajuste o ambiente/plano para um runtime com suporte adequado.
+14. Garanta que `TEMP_UPLOAD_DIR` aponta para uma pasta gravável, por exemplo `./tmp/uploads`, e não para um arquivo existente. Se aparecer erro `EEXIST`, limpe a pasta temporária e reinicie o app Node.js.
 
 Se o repositório nao aparecer na Hostinger:
 

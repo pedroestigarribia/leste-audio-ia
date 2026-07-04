@@ -543,9 +543,15 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         throw new Error(payload?.error || "Falha ao gerar a voz com IA.");
       }
 
+      const responseContentType = response.headers.get("Content-Type") || "";
       const blob = await response.blob();
+      const resolvedContentType = blob.type || responseContentType;
+
+      if (!resolvedContentType.includes("mpeg") && !resolvedContentType.includes("mp3")) {
+        throw new Error("A leitura foi gerada, mas o servidor nao entregou MP3. Reinicie o app na Hostinger e tente novamente.");
+      }
+
       const url = URL.createObjectURL(blob);
-      const contentType = blob.type || response.headers.get("Content-Type") || "audio/wav";
 
       setSpeechAudioUrls((current) => {
         const currentUrl = current[key];
@@ -562,7 +568,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
 
       setSpeechAudioTypes((current) => ({
         ...current,
-        [key]: contentType,
+        [key]: "audio/mpeg",
       }));
       setActiveSpeechKey(key);
     } catch (error) {

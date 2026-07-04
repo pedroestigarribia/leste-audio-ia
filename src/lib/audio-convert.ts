@@ -5,7 +5,6 @@ import path from "path";
 
 import { execa } from "execa";
 import ffmpegStatic from "ffmpeg-static";
-import { nanoid } from "nanoid";
 
 import { cleanupFiles, ensureTempDir } from "@/lib/temp-files";
 
@@ -67,10 +66,21 @@ export async function convertToWav(inputPath: string): Promise<string> {
 
 export async function convertWavBufferToMp3(input: Buffer): Promise<Buffer> {
   const tempDir = await ensureTempDir();
-  const id = nanoid();
-  const inputPath = path.join(tempDir, `${id}-speech.wav`);
-  const outputPath = path.join(tempDir, `${id}-speech.mp3`);
-  const args = ["-y", "-i", inputPath, "-codec:a", "libmp3lame", "-b:a", "128k", outputPath];
+  const conversionDir = await fs.mkdtemp(path.join(tempDir, "speech-"));
+  const inputPath = path.join(conversionDir, "input.wav");
+  const outputPath = path.join(conversionDir, "output.mp3");
+  const args = [
+    "-y",
+    "-nostdin",
+    "-i",
+    inputPath,
+    "-vn",
+    "-codec:a",
+    "libmp3lame",
+    "-b:a",
+    "128k",
+    outputPath,
+  ];
 
   await fs.writeFile(inputPath, input);
 
@@ -79,5 +89,81 @@ export async function convertWavBufferToMp3(input: Buffer): Promise<Buffer> {
     return await fs.readFile(outputPath);
   } finally {
     await cleanupFiles([inputPath, outputPath]);
+    await fs.rm(conversionDir, { force: true, recursive: true });
   }
+}
+
+function readWavMetadata(input: Buffer) {
+  if (input.length < 44 || input.toString("ascii", 0, 4) !== "RIFF" || input.toString("ascii", 8, 12) !== "WAVE") {
+    throw new Error("Audio WAV invalido para conversao em MP3.");
+  }
+
+  const sampleRate = input.readUInt32LE(24);
+  const channels = input.readUInt16LE(22);
+  const bitsPerSample = input.readUInt16LE(34);
+  const dataIndex = input.indexOf(Buffer.from("data"));
+
+  if (dataIndex === -1 || dataIndex + 8 > input.length) {
+    throw new Error("Audio WAV sem bloco de dados.");
+  }
+
+  const dataStart = dataIndex + 8;
+  const dataLength = input.readUInt32LE(dataIndex + 4);
+  const dataEnd = Math.min(dataStart + dataLength, input.length);
+
+  return {
+    bitsPerSample,
+    channels,
+    data: input.subarray(dataStart, dataEnd),
+    sampleRate,
+  };
+}
+
+function buildWavHeader(dataLength: number, sampleRate: number, channels: number, bitsPerSample: number) {
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+  const header = Buffer.alloc(44);
+
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + dataLength, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(dataLength, 40);
+
+  return header;
+}
+
+export async function convertWavBuffersToMp3(inputs: Buffer[]): Promise<Buffer> {
+  if (!inputs.length) {
+    throw new Error("Nenhum audio gerado para conversao em MP3.");
+  }
+
+  const wavParts = inputs.map(readWavMetadata);
+  const firstPart = wavParts[0];
+  const hasSameFormat = wavParts.every(
+    (part) =>
+      part.sampleRate === firstPart.sampleRate &&
+      part.channels === firstPart.channels &&
+      part.bitsPerSample === firstPart.bitsPerSample,
+  );
+
+  if (!hasSameFormat) {
+    throw new Error("Os blocos de voz retornaram formatos WAV diferentes.");
+  }
+
+  const data = Buffer.concat(wavParts.map((part) => part.data));
+  const wav = Buffer.concat([
+    buildWavHeader(data.length, firstPart.sampleRate, firstPart.channels, firstPart.bitsPerSample),
+    data,
+  ]);
+
+  return convertWavBufferToMp3(wav);
 }

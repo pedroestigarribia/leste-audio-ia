@@ -21,8 +21,24 @@ export function sanitizeFileName(name: string): string {
 }
 
 export async function ensureTempDir() {
-  await fs.mkdir(getResolvedTempDir(), { recursive: true });
-  return getResolvedTempDir();
+  const tempDir = getResolvedTempDir();
+
+  try {
+    await fs.mkdir(tempDir, { recursive: true });
+  } catch (error) {
+    const errorCode =
+      typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+
+    if (errorCode === "EEXIST" || errorCode === "ENOTDIR") {
+      throw new Error(
+        `TEMP_UPLOAD_DIR aponta para um caminho invalido ou ocupado: ${tempDir}. Configure TEMP_UPLOAD_DIR para uma pasta gravavel, como ./tmp/uploads.`,
+      );
+    }
+
+    throw error;
+  }
+
+  return tempDir;
 }
 
 export async function saveUploadedFileToTemp(file: UploadedTempFileInput) {
