@@ -526,12 +526,13 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     });
 
     try {
-      const response = await fetch("/api/speech-mp3", {
+      const response = await fetch("/api/speech", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          format: "mp3",
           title,
           text: normalizedText,
         }),
