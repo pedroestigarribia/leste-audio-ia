@@ -8,6 +8,8 @@ import { synthesizeSpeechWithGemini } from "@/lib/gemini-tts";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const SPEECH_ROUTE_VERSION = "in-memory-mp3-2026-07-04";
+
 const speechSchema = z.object({
   text: z.string().trim().min(1, "Envie um texto para leitura.").max(24000, "Texto muito longo para leitura em voz."),
   title: z.string().trim().max(120).optional(),
@@ -82,8 +84,14 @@ function buildJsonError(message: string, status: number) {
     {
       ok: false,
       error: message,
+      version: SPEECH_ROUTE_VERSION,
     },
-    { status },
+    {
+      status,
+      headers: {
+        "X-Leste-Speech-Version": SPEECH_ROUTE_VERSION,
+      },
+    },
   );
 }
 
@@ -131,6 +139,7 @@ export async function POST(request: Request) {
       headers: {
         ...headers,
         "Content-Type": contentType,
+        "X-Leste-Speech-Version": SPEECH_ROUTE_VERSION,
       },
     });
   } catch (error) {
