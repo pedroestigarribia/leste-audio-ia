@@ -301,6 +301,10 @@ Entrada:
 
 Retorna áudio para a leitura com voz da Milena. O app entrega `audio/mpeg` em MP3. Se a conversão para MP3 falhar, a rota retorna erro claro em vez de baixar WAV.
 
+### `POST /api/speech-mp3`
+
+Rota usada pelo frontend para forçar leitura com voz da Milena em MP3. Ela sempre retorna `audio/mpeg` quando a geração funciona. Se o ambiente não conseguir converter para MP3, retorna erro claro e não entrega WAV.
+
 ### `POST /api/image-extract`
 
 - Entrada: `multipart/form-data`
