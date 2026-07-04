@@ -1,9 +1,9 @@
 import "server-only";
 
 import { existsSync, promises as fs } from "fs";
-import os from "os";
 import path from "path";
 
+import { Mp3Encoder } from "@breezystack/lamejs";
 import { execa } from "execa";
 import ffmpegStatic from "ffmpeg-static";
 
@@ -64,30 +64,7 @@ export async function convertToWav(inputPath: string): Promise<string> {
 }
 
 export async function convertWavBufferToMp3(input: Buffer): Promise<Buffer> {
-  const conversionDir = await fs.mkdtemp(path.join(os.tmpdir(), "leste-audio-speech-"));
-  const inputPath = path.join(conversionDir, "input.wav");
-  const outputPath = path.join(conversionDir, "output.mp3");
-  const args = [
-    "-y",
-    "-nostdin",
-    "-i",
-    inputPath,
-    "-vn",
-    "-codec:a",
-    "libmp3lame",
-    "-b:a",
-    "128k",
-    outputPath,
-  ];
-
-  await fs.writeFile(inputPath, input);
-
-  try {
-    await runFfmpegWithFallback(args);
-    return await fs.readFile(outputPath);
-  } finally {
-    await fs.rm(conversionDir, { force: true, recursive: true });
-  }
+  return convertWavBuffersToMp3([input]);
 }
 
 function readWavMetadata(input: Buffer) {
@@ -157,10 +134,57 @@ export async function convertWavBuffersToMp3(inputs: Buffer[]): Promise<Buffer> 
   }
 
   const data = Buffer.concat(wavParts.map((part) => part.data));
-  const wav = Buffer.concat([
-    buildWavHeader(data.length, firstPart.sampleRate, firstPart.channels, firstPart.bitsPerSample),
-    data,
-  ]);
+  const wav = Buffer.concat([buildWavHeader(data.length, firstPart.sampleRate, firstPart.channels, firstPart.bitsPerSample), data]);
 
-  return convertWavBufferToMp3(wav);
+  return encodeWavToMp3(wav);
+}
+
+function encodeWavToMp3(input: Buffer) {
+  const wav = readWavMetadata(input);
+
+  if (wav.bitsPerSample !== 16) {
+    throw new Error("A conversao direta para MP3 suporta apenas WAV PCM 16-bit.");
+  }
+
+  const samples = new Int16Array(wav.data.buffer, wav.data.byteOffset, Math.floor(wav.data.byteLength / 2));
+  const encoder = new Mp3Encoder(wav.channels, wav.sampleRate, 128);
+  const mp3Chunks: Buffer[] = [];
+  const blockSize = 1152;
+
+  for (let offset = 0; offset < samples.length; offset += blockSize * wav.channels) {
+    if (wav.channels === 1) {
+      const left = samples.subarray(offset, Math.min(offset + blockSize, samples.length));
+      const chunk = encoder.encodeBuffer(left);
+
+      if (chunk.length) {
+        mp3Chunks.push(Buffer.from(chunk));
+      }
+
+      continue;
+    }
+
+    const frame = samples.subarray(offset, Math.min(offset + blockSize * wav.channels, samples.length));
+    const sampleCount = Math.floor(frame.length / wav.channels);
+    const left = new Int16Array(sampleCount);
+    const right = new Int16Array(sampleCount);
+
+    for (let index = 0; index < sampleCount; index += 1) {
+      left[index] = frame[index * wav.channels];
+      right[index] = frame[index * wav.channels + 1] ?? frame[index * wav.channels];
+    }
+
+    const chunk = encoder.encodeBuffer(left, right);
+
+    if (chunk.length) {
+      mp3Chunks.push(Buffer.from(chunk));
+    }
+  }
+
+  const finalChunk = encoder.flush();
+
+  if (finalChunk.length) {
+    mp3Chunks.push(Buffer.from(finalChunk));
+  }
+
+  return Buffer.concat(mp3Chunks);
 }

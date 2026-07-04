@@ -375,6 +375,7 @@ Modos disponíveis:
 Além da lista principal pedida, o projeto usa:
 
 - `docx`: para gerar download `.docx` no frontend sem reenviar o conteúdo ao backend.
+- `@breezystack/lamejs`: para gerar MP3 da voz da Milena em memória, sem depender de arquivos temporários ou FFmpeg nessa etapa.
 - `execa`: para executar `ffmpeg-static` ou `ffmpeg` do sistema com menos acoplamento.
 - `pdf-parse`: para extrair texto pesquisável de PDFs no backend.
 - `@types/node`, `@types/react`, `@types/react-dom`: suporte de tipagem para TypeScript.
