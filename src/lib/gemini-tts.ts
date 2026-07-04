@@ -99,7 +99,7 @@ export async function synthesizeSpeechWithGemini(text: string): Promise<GeminiSp
     const inlineAudio = extractInlineAudio(payload);
 
     if (!inlineAudio) {
-      throw new Error("O Gemini nao retornou audio para leitura.");
+      throw new Error("A Milena nao retornou audio para leitura.");
     }
 
     const audioBuffer = Buffer.from(inlineAudio.data, "base64");
@@ -121,6 +121,6 @@ export async function synthesizeSpeechWithGemini(text: string): Promise<GeminiSp
     }
 
     const message = error instanceof Error ? error.message : "Erro desconhecido.";
-    throw new Error(`Falha ao gerar voz com Gemini. ${message}`);
+    throw new Error(`Falha ao gerar voz da Milena. ${message}`);
   }
 }

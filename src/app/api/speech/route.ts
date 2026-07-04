@@ -8,7 +8,7 @@ import { synthesizeSpeechWithGemini } from "@/lib/gemini-tts";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SPEECH_ROUTE_VERSION = "in-memory-mp3-2026-07-04";
+const SPEECH_ROUTE_VERSION = "isolated-mp3-encoder-2026-07-04";
 
 const speechSchema = z.object({
   text: z.string().trim().min(1, "Envie um texto para leitura.").max(24000, "Texto muito longo para leitura em voz."),
@@ -124,8 +124,8 @@ export async function POST(request: Request) {
         audio = Buffer.concat(audioResults.map((item) => item.audio));
         contentType = "audio/mpeg";
       } else if (allResultsAreWav) {
-        const { convertWavBuffersToMp3 } = await import("@/lib/audio-convert");
-        audio = await convertWavBuffersToMp3(audioResults.map((item) => item.audio));
+        const { encodeWavBuffersToMp3 } = await import("@/lib/speech-mp3");
+        audio = encodeWavBuffersToMp3(audioResults.map((item) => item.audio));
         contentType = "audio/mpeg";
       } else {
         throw new Error("Nao foi possivel converter todos os blocos de voz para MP3.");
