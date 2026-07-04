@@ -1,6 +1,6 @@
 # Leste Audio IA
 
-Web app local em Next.js para upload, transcrição, resumo, organização, interpretação e cópia de áudios do WhatsApp.
+Web app local em Next.js para upload, transcrição, resumo, organização, interpretação, cópia e leitura com voz de áudios do WhatsApp, textos, PDFs e imagens.
 
 ## Objetivo
 
@@ -15,6 +15,7 @@ Rodar primeiro em `localhost`, processar múltiplos áudios enviados manualmente
 - Node.js runtime
 - Gemini API para transcrição
 - DeepSeek API para resumo, organização e análise geral
+- Gemini API para leitura com voz da Milena e geração de texto a partir de imagem
 - `ffmpeg-static` com fallback para FFmpeg do sistema
 - exportação TXT e DOCX em texto puro
 
@@ -30,6 +31,10 @@ src/
       organize/route.ts
       analyze-all/route.ts
       export-txt/route.ts
+      image-extract/route.ts
+      pdf-extract/route.ts
+      pdf-process/route.ts
+      speech/route.ts
     globals.css
     layout.tsx
     page.tsx
@@ -43,6 +48,7 @@ src/
     LesteAudioApp.tsx
     ProgressBar.tsx
     ResultPanel.tsx
+    TextImageVoicePanel.tsx
     UploadArea.tsx
   lib/
     audio.ts
@@ -53,6 +59,10 @@ src/
     export-txt.ts
     format.ts
     gemini.ts
+    gemini-tts.ts
+    image.ts
+    multipart.ts
+    pdf.ts
     plain-text.ts
     queue.ts
     temp-files.ts
@@ -156,6 +166,8 @@ Domínio:
 3. Arraste ou selecione os arquivos.
 4. Clique em `Transcrever áudios`.
 5. Use os botões individuais e gerais para resumo, organização, interpretação, tarefas, dados-chave, resposta para WhatsApp, cópia e exportação.
+6. Use a área de texto livre para converter qualquer texto em voz da Milena e baixar o áudio.
+7. Use a área de imagem para enviar PNG, JPG, JPEG ou WEBP, gerar texto da imagem, copiar, ouvir e baixar a voz.
 
 ## Fluxo implementado
 
@@ -171,6 +183,8 @@ Domínio:
 10. O texto fica apenas na sessão atual da interface.
 11. O usuário pode continuar adicionando mais 10 áudios ou mais sem perder os arquivos já listados.
 12. O painel geral permite ouvir os áudios enquanto organiza e analisa o conteúdo.
+13. A área de texto livre permite colar conteúdo, gerar voz da Milena e baixar MP3 ou WAV fallback.
+14. A área de imagem envia a imagem ao backend, usa Gemini para gerar texto e permite copiar, ouvir e baixar a leitura.
 
 ## Processamento temporário e privacidade
 
@@ -287,6 +301,13 @@ Entrada:
 
 Retorna áudio para a leitura com voz da Milena. O app tenta entregar `audio/mpeg` em MP3. Se o FFmpeg não estiver disponível no ambiente, retorna WAV como fallback.
 
+### `POST /api/image-extract`
+
+- Entrada: `multipart/form-data`
+- Campo: `file`
+- Formatos aceitos: PNG, JPG, JPEG e WEBP
+- Responsabilidade: validar imagem, enviar ao Gemini pelo backend e retornar texto limpo, copiável e pronto para leitura com voz.
+
 ### `POST /api/pdf-extract`
 
 - Entrada: `multipart/form-data`
@@ -321,6 +342,13 @@ Modos disponíveis:
 - `.webm`
 - `.aac`
 - `.flac`
+
+## Formatos de imagem aceitos
+
+- `.png`
+- `.jpg`
+- `.jpeg`
+- `.webp`
 
 ## Scripts
 
@@ -449,6 +477,9 @@ O projeto tambem inclui protecoes contra esse caso:
 - Não salva histórico.
 - Não divide arquivos grandes automaticamente.
 - O player de áudio funciona apenas durante a sessão atual, enquanto o arquivo ainda está no navegador.
+- Texto livre e imagem processada ficam apenas na sessão atual da tela.
+- A extração de imagem depende da legibilidade do texto e da qualidade visual da imagem.
+- Imagens sem texto podem gerar uma descrição objetiva do conteúdo visível.
 - A qualidade da transcrição depende da qualidade do áudio.
 - Áudios com ruído, sobreposição de vozes ou fala distante podem gerar trechos incertos.
 - O Gemini transcreve; o DeepSeek interpreta apenas o texto já transcrito.
@@ -488,6 +519,14 @@ O projeto tambem inclui protecoes contra esse caso:
 - [ ] Gerar leitura com voz da Milena
 - [ ] Pausar e parar a leitura da Milena pelo player
 - [ ] Baixar a leitura da Milena em MP3 ou WAV fallback
+- [ ] Colar texto livre
+- [ ] Gerar voz da Milena a partir do texto livre
+- [ ] Baixar a voz do texto livre
+- [ ] Enviar imagem PNG, JPG, JPEG ou WEBP
+- [ ] Gerar texto a partir da imagem
+- [ ] Copiar texto gerado da imagem
+- [ ] Gerar voz da Milena a partir do texto da imagem
+- [ ] Baixar a voz do texto da imagem
 - [ ] Enviar PDF
 - [ ] Ver texto extraído do PDF no painel
 - [ ] Resumir, organizar, ajustar gramática e limpar texto do PDF
