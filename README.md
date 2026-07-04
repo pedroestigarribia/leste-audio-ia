@@ -183,7 +183,7 @@ Domínio:
 10. O texto fica apenas na sessão atual da interface.
 11. O usuário pode continuar adicionando mais 10 áudios ou mais sem perder os arquivos já listados.
 12. O painel geral permite ouvir os áudios enquanto organiza e analisa o conteúdo.
-13. A área de texto livre permite colar conteúdo, gerar voz da Milena e baixar MP3 ou WAV fallback.
+13. A área de texto livre permite colar conteúdo, gerar voz da Milena e baixar MP3.
 14. A área de imagem envia a imagem ao backend, usa Gemini para gerar texto e permite copiar, ouvir e baixar a leitura.
 
 ## Processamento temporário e privacidade
@@ -299,7 +299,7 @@ Entrada:
 }
 ```
 
-Retorna áudio para a leitura com voz da Milena. O app tenta entregar `audio/mpeg` em MP3. Se o FFmpeg não estiver disponível no ambiente, retorna WAV como fallback.
+Retorna áudio para a leitura com voz da Milena. O app entrega `audio/mpeg` em MP3. Se a conversão para MP3 falhar, a rota retorna erro claro em vez de baixar WAV.
 
 ### `POST /api/image-extract`
 
@@ -518,7 +518,7 @@ O projeto tambem inclui protecoes contra esse caso:
 - [ ] Ouvir os áudios no painel geral
 - [ ] Gerar leitura com voz da Milena
 - [ ] Pausar e parar a leitura da Milena pelo player
-- [ ] Baixar a leitura da Milena em MP3 ou WAV fallback
+- [ ] Baixar a leitura da Milena em MP3
 - [ ] Colar texto livre
 - [ ] Gerar voz da Milena a partir do texto livre
 - [ ] Baixar a voz do texto livre

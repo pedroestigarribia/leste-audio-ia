@@ -185,9 +185,6 @@ function SpeechQuickActions({
   const hasAnyResult = results.some((result) => result.text.trim());
   const activeResult = results.find((result) => result.key === activeSpeechKey);
   const activeUrl = activeResult ? speechAudioUrls[activeResult.key] : undefined;
-  const activeContentType = activeResult ? speechAudioTypes[activeResult.key] : undefined;
-  const activeExtension =
-    activeContentType?.includes("mpeg") || activeContentType?.includes("mp3") ? "MP3" : "WAV";
 
   return (
     <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-4">
@@ -251,7 +248,7 @@ function SpeechQuickActions({
                 type="button"
                 variant="secondary"
               >
-                Baixar {activeExtension}
+                Baixar MP3
               </ActionButton>
             </div>
           </div>

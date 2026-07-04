@@ -587,8 +587,6 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       return;
     }
 
-    const contentType = speechAudioTypes[key] ?? "";
-    const extension = contentType.includes("mpeg") || contentType.includes("mp3") ? "mp3" : "wav";
     const safeLabel = label
       .normalize("NFKD")
       .replace(/[\u0300-\u036f]/g, "")
@@ -597,7 +595,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       .toLowerCase();
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `milena-${safeLabel || "voz-ia"}.${extension}`;
+    anchor.download = `milena-${safeLabel || "voz-ia"}.mp3`;
     anchor.click();
   }
 

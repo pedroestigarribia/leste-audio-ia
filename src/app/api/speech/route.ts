@@ -45,13 +45,15 @@ export async function POST(request: Request) {
       "Cache-Control": "no-store",
     };
 
-    if (parsedBody.data.format === "mp3" && result.contentType === "audio/wav") {
-      try {
+    if (parsedBody.data.format === "mp3") {
+      if (result.contentType.includes("mpeg") || result.contentType.includes("mp3")) {
+        contentType = "audio/mpeg";
+      } else if (result.contentType === "audio/wav") {
         const { convertWavBufferToMp3 } = await import("@/lib/audio-convert");
         audio = await convertWavBufferToMp3(result.audio);
         contentType = "audio/mpeg";
-      } catch {
-        headers["X-Audio-Fallback"] = "wav";
+      } else {
+        throw new Error(`Nao foi possivel converter ${result.contentType} para MP3.`);
       }
     }
 

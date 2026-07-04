@@ -39,10 +39,6 @@ type TextImageVoicePanelProps = {
   textValue: string;
 };
 
-function getSpeechExtension(contentType?: string) {
-  return contentType?.includes("mpeg") || contentType?.includes("mp3") ? "mp3" : "wav";
-}
-
 function SpeechPlayer({
   activeSpeechKey,
   label,
@@ -66,8 +62,6 @@ function SpeechPlayer({
     return null;
   }
 
-  const extension = getSpeechExtension(speechAudioTypes[speechKey]);
-
   return (
     <div className="space-y-3 rounded-lg border border-amber-200 bg-white p-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -83,7 +77,7 @@ function SpeechPlayer({
             type="button"
             variant="secondary"
           >
-            Baixar {extension.toUpperCase()}
+            Baixar MP3
           </ActionButton>
         </div>
       </div>
