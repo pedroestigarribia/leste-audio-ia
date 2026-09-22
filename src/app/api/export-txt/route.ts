@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           ok: false,
-          error: parsedBody.error.issues[0]?.message ?? "Corpo invalido.",
+          error: parsedBody.error.issues[0]?.message ?? "Corpo inválido.",
         },
         { status: 400 },
       );

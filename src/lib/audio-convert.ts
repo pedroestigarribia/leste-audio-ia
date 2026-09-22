@@ -28,7 +28,7 @@ async function runFfmpegWithFallback(args: string[]) {
 
   for (const candidate of getStaticFfmpegCandidates()) {
     if (!existsSync(candidate)) {
-      failures.push(`FFmpeg nao encontrado em ${candidate}.`);
+      failures.push(`FFmpeg não encontrado em ${candidate}.`);
       continue;
     }
 
@@ -48,7 +48,7 @@ async function runFfmpegWithFallback(args: string[]) {
   }
 
   throw new Error(
-    `Nao foi possivel executar o FFmpeg. Verifique ffmpeg-static, FFMPEG_BIN ou a instalacao do FFmpeg no sistema. ${failures.join(" | ")}`.trim(),
+    `Não foi possível executar o FFmpeg. Verifique ffmpeg-static, FFMPEG_BIN ou a instalação do FFmpeg no sistema. ${failures.join(" | ")}`.trim(),
   );
 }
 
@@ -57,6 +57,34 @@ export async function convertToWav(inputPath: string): Promise<string> {
   const parsedPath = path.parse(inputFilePath);
   const outputPath = path.join(parsedPath.dir, `${parsedPath.name}-converted.wav`);
   const args = ["-y", "-i", inputFilePath, "-ac", "1", "-ar", "16000", outputPath];
+
+  await runFfmpegWithFallback(args);
+  return outputPath;
+}
+
+/**
+ * Produces a compact speech-focused track for Gemini's inline request limit.
+ * It also removes video streams from MP4/WebM uploads.
+ */
+export async function convertToInlineOpus(inputPath: string): Promise<string> {
+  const inputFilePath = path.resolve(inputPath);
+  const parsedPath = path.parse(inputFilePath);
+  const outputPath = path.join(parsedPath.dir, `${parsedPath.name}-inline.opus`);
+  const args = [
+    "-y",
+    "-i",
+    inputFilePath,
+    "-vn",
+    "-ac",
+    "1",
+    "-ar",
+    "16000",
+    "-c:a",
+    "libopus",
+    "-b:a",
+    "24k",
+    outputPath,
+  ];
 
   await runFfmpegWithFallback(args);
   return outputPath;

@@ -6,10 +6,18 @@ import ActionButton from "@/components/ActionButton";
 import ErrorBox from "@/components/ErrorBox";
 import { formatBytes } from "@/lib/format";
 
-export type PdfResultKey = "summary" | "organized" | "grammar" | "clean";
+export type PdfResultKey =
+  | "analysis"
+  | "summary"
+  | "interpretation"
+  | "organized"
+  | "grammar"
+  | "clean";
 export type PdfSpeechKey =
   | "pdf-original"
+  | "pdf-analysis"
   | "pdf-summary"
+  | "pdf-interpretation"
   | "pdf-organized"
   | "pdf-grammar"
   | "pdf-clean";
@@ -45,21 +53,27 @@ const pdfActions: Array<{
   label: string;
   loadingKey: string;
 }> = [
-  { key: "summary", label: "Resumir PDF", loadingKey: "pdf:summary" },
-  { key: "organized", label: "Organizar PDF", loadingKey: "pdf:organized" },
+  { key: "analysis", label: "Analisar e identificar", loadingKey: "pdf:analysis" },
+  { key: "summary", label: "Resumir documento", loadingKey: "pdf:summary" },
+  { key: "interpretation", label: "Interpretar documento", loadingKey: "pdf:interpretation" },
+  { key: "organized", label: "Organizar documento", loadingKey: "pdf:organized" },
   { key: "grammar", label: "Ajustar gramática", loadingKey: "pdf:grammar" },
   { key: "clean", label: "Deixar pronto para copiar", loadingKey: "pdf:clean" },
 ];
 
 const resultLabels: Record<PdfResultKey, string> = {
-  summary: "Resumo do PDF",
-  organized: "PDF organizado",
+  analysis: "Análise e identificação do documento",
+  summary: "Resumo e conclusão do documento",
+  interpretation: "Interpretação e conclusão do documento",
+  organized: "Documento organizado",
   grammar: "Texto com ajuste gramatical",
   clean: "Texto limpo e pronto para copiar",
 };
 
 const speechKeys: Record<PdfResultKey, PdfSpeechKey> = {
+  analysis: "pdf-analysis",
   summary: "pdf-summary",
+  interpretation: "pdf-interpretation",
   organized: "pdf-organized",
   grammar: "pdf-grammar",
   clean: "pdf-clean",
@@ -138,17 +152,20 @@ export default function PdfPanel({
     <section className="space-y-5 rounded-lg border border-blue-100 bg-white p-4 shadow-editorial sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-xl font-black text-slate-950">PDF para texto e IA</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Envie um PDF para extrair o texto, resumir, organizar, ajustar gramaticalmente,
-            copiar e ouvir com a Milena.
+            <h2 className="text-xl font-black text-slate-950">Contratos, PDF e DOCX: análise e audiolivro</h2>
+            <p className="mt-2 text-sm text-slate-600">
+            Envie contratos e documentos para identificar o tipo, analisar, resumir, interpretar,
+            organizar e preparar uma narração natural com a Milena.
+          </p>
+          <p className="mt-2 text-xs font-medium text-slate-500">
+            A análise é informativa e não substitui revisão jurídica, contábil ou profissional especializada.
           </p>
         </div>
         <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-leste-blue px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-950/15 transition hover:bg-blue-950">
           <Upload className="h-4 w-4" />
-          Enviar PDF
+          Enviar PDF ou DOCX
           <input
-            accept="application/pdf,.pdf"
+            accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
             className="hidden"
             onChange={(event) => {
               const file = event.currentTarget.files?.[0];
@@ -182,7 +199,7 @@ export default function PdfPanel({
                 </div>
               </div>
               <ActionButton className="sm:w-auto" fullWidth onClick={onClearPdf} type="button" variant="danger">
-                Limpar PDF
+                Limpar documento
               </ActionButton>
             </div>
           </div>
@@ -190,12 +207,13 @@ export default function PdfPanel({
           <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h3 className="text-sm font-black uppercase text-leste-blue">
-                  Leitura com voz da Milena
+                <h3 className="flex items-center gap-2 text-sm font-black uppercase text-leste-blue">
+                  <Volume2 className="h-4 w-4 text-rose-500" />
+                  Milena Voz
                 </h3>
                 <p className="mt-1 text-sm text-slate-700">
-                  A Milena lê o texto do PDF e os conteúdos tratados pela IA. Use o player para
-                  pausar e o botão Parar para encerrar.
+                  A identificação, o resumo e a interpretação são gerados após a extração. Você decide
+                  se quer gerar MP3s, ouvir no painel ou baixar cada resultado.
                 </p>
               </div>
               <div className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold uppercase text-slate-500">
@@ -208,12 +226,12 @@ export default function PdfPanel({
               <ActionButton
                 fullWidth
                 loading={speechLoadingMap[originalSpeechKey]}
-                onClick={() => onSpeak(originalSpeechKey, "Texto original do PDF", pdf.text)}
+                onClick={() => onSpeak(originalSpeechKey, "Texto original do documento", pdf.text)}
                 type="button"
                 variant="secondary"
               >
                 <Volume2 className="h-4 w-4" />
-                Ouvir texto do PDF
+                Ouvir texto original
               </ActionButton>
               {pdfActions.map((action) => {
                 const text = pdf.results[action.key];
@@ -238,7 +256,7 @@ export default function PdfPanel({
 
             <SpeechPlayer
               activeSpeechKey={activeSpeechKey}
-              label="Texto original do PDF"
+              label="Texto original do documento"
               onDownloadSpeech={onDownloadSpeech}
               onStopSpeech={onStopSpeech}
               speechAudioTypes={speechAudioTypes}
@@ -266,7 +284,7 @@ export default function PdfPanel({
 
           <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-sm font-semibold uppercase text-slate-500">Texto extraído do PDF</h3>
+              <h3 className="text-sm font-semibold uppercase text-slate-500">Texto extraído do documento</h3>
               <ActionButton
                 className="sm:w-auto"
                 fullWidth
@@ -309,7 +327,7 @@ export default function PdfPanel({
                       variant="secondary"
                     >
                       <Volume2 className="h-4 w-4" />
-                      Milena lê este texto
+                      Ouvir com Milena
                     </ActionButton>
                     <ActionButton
                       className="sm:w-auto"
@@ -344,7 +362,7 @@ export default function PdfPanel({
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50/60 px-5 py-6 text-sm text-slate-600">
-          Nenhum PDF enviado ainda. Envie um arquivo para extrair o texto e usar as ferramentas de IA.
+          Nenhum documento enviado ainda. Envie um PDF ou DOCX para extrair o texto, preparar a narração e usar as ferramentas de IA.
         </div>
       )}
     </section>

@@ -1,6 +1,12 @@
 /** @type {import("next").NextConfig} */
+const isDev = process.env.NODE_ENV === "development";
+
 const nextConfig = {
   reactStrictMode: true,
+  // O servidor de desenvolvimento usa um diretorio proprio para que um
+  // "npm run build" executado em paralelo nunca sobrescreva os chunks que o
+  // "next dev" ja carregou em memoria. Producao (build/start) continua em .next.
+  distDir: isDev ? ".next-dev" : ".next",
   async headers() {
     return [
       {

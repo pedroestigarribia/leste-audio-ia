@@ -12,7 +12,15 @@ export async function GET() {
     ok: true,
     app: config.appName,
     geminiModel: config.geminiModel,
+    geminiTranscribeModel: config.geminiTranscribeModel,
+    geminiAudioUnderstandingModel: config.geminiAudioUnderstandingModel,
+    geminiTextModel: config.textModel,
     geminiTtsModel: config.geminiTtsModel,
+    geminiAudiobookTtsModel: config.geminiTtsAudiobookModel,
+    geminiLiveModel: config.geminiLiveModel,
+    textAiProvider: config.textAiProvider,
     deepseekModel: config.deepSeekModel,
+    maxVideoUploadMb: config.maxVideoUploadMb,
+    maxVideoDurationSec: config.maxVideoDurationSec,
   });
 }

@@ -7,6 +7,7 @@ export const ALLOWED_AUDIO_EXTENSIONS = [
   "webm",
   "aac",
   "flac",
+  "mp4",
 ] as const;
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -14,13 +15,16 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   flac: "audio/flac",
   m4a: "audio/mp4",
   mp3: "audio/mpeg",
+  mp4: "video/mp4",
   ogg: "audio/ogg",
   opus: "audio/ogg",
   wav: "audio/wav",
   webm: "audio/webm",
 };
 
-const CONVERSION_PRIORITY = new Set(["ogg", "opus", "webm", "m4a", "aac"]);
+// MP4 is sent to Gemini first to preserve any useful audio metadata. If that fails,
+// the transcription route converts it to a broadly compatible mono WAV file.
+const CONVERSION_PRIORITY = new Set(["ogg", "opus", "webm", "m4a", "aac", "mp4"]);
 
 export function getFileExtension(filename: string): string {
   const cleanName = filename.trim().toLowerCase();
@@ -49,7 +53,16 @@ export function isAllowedAudio(extension: string, mimeType?: string): boolean {
     return true;
   }
 
-  if (normalizedMime.startsWith("audio/")) {
+  // Browsers and WhatsApp exports sometimes omit the media MIME type and use a
+  // generic binary value. The allowed extension remains the source of trust.
+  if (
+    normalizedMime === "application/octet-stream" ||
+    normalizedMime === "binary/octet-stream"
+  ) {
+    return true;
+  }
+
+  if (normalizedMime.startsWith("audio/") || normalizedMime.startsWith("video/")) {
     return true;
   }
 

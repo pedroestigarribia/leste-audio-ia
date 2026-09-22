@@ -34,7 +34,7 @@ export async function buildDocxBlob({
       }),
     );
 
-    const normalizedContent = normalizePlainText(section.content) || "(sem conteudo)";
+    const normalizedContent = normalizePlainText(section.content) || "(sem conteúdo)";
     const paragraphs = normalizedContent.split(/\n{2,}/);
 
     for (const paragraph of paragraphs) {

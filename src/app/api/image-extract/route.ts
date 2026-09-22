@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     const mimeType = file.type.toLowerCase();
 
     if (!isAllowedImage(extension, mimeType)) {
-      return buildJsonError("Envie uma imagem valida em PNG, JPG, JPEG ou WEBP.", 400);
+      return buildJsonError("Envie uma imagem válida em PNG, JPG, JPEG ou WEBP.", 400);
     }
 
     if (file.size > getMaxFileSizeBytes()) {

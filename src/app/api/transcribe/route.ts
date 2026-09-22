@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { stat } from "node:fs/promises";
 
 import {
   getFileExtension,
@@ -20,6 +21,14 @@ import type { TranscriptionResponse } from "@/types/audio";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const INLINE_FALLBACK_SOURCE_MAX_BYTES = 100 * 1024 * 1024;
+const INLINE_REQUEST_MAX_BYTES = 18 * 1024 * 1024;
+
+function needsCompressedInlineFallback(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /arquivo remoto.*grande demais|modo alternativo/i.test(message);
+}
+
 function buildJsonError(message: string, status: number) {
   return NextResponse.json<TranscriptionResponse>(
     {
@@ -37,15 +46,21 @@ export async function POST(request: Request) {
     const fileEntry = await parseMultipartFile(request);
 
     if (!fileEntry) {
-      return buildJsonError("Envie um arquivo de audio valido em multipart/form-data.", 400);
+      return buildJsonError("Envie um arquivo de áudio válido em multipart/form-data.", 400);
     }
 
     const extension = getFileExtension(fileEntry.name);
-    const mimeType = fileEntry.type || getMimeTypeFromExtension(extension);
+    const receivedMimeType = fileEntry.type.trim().toLowerCase();
+    const mimeType =
+      !receivedMimeType ||
+      receivedMimeType === "application/octet-stream" ||
+      receivedMimeType === "binary/octet-stream"
+        ? getMimeTypeFromExtension(extension)
+        : receivedMimeType;
     const maxFileSizeBytes = getMaxFileSizeBytes();
 
     if (!isAllowedAudio(extension, mimeType)) {
-      return buildJsonError("Formato de audio nao suportado.", 400);
+      return buildJsonError("Formato de áudio não suportado.", 400);
     }
 
     if (fileEntry.size > maxFileSizeBytes) {
@@ -76,20 +91,46 @@ export async function POST(request: Request) {
         throw error;
       }
 
-      if (!shouldConvert(savedFile.extension)) {
-        throw error;
+      if (needsCompressedInlineFallback(error)) {
+        if (savedFile.size > INLINE_FALLBACK_SOURCE_MAX_BYTES) {
+          throw new Error(
+            "A Files API do Gemini foi recusada e o modo alternativo aceita arquivos de origem de até 100 MB. Para este arquivo, libere a Files API no projeto Google.",
+          );
+        }
+
+        const { convertToInlineOpus } = await import("@/lib/audio-convert");
+        const compactFilePath = await convertToInlineOpus(savedFile.filePath);
+        filesToCleanup.push(compactFilePath);
+        const compactSize = (await stat(compactFilePath)).size;
+
+        if (compactSize > INLINE_REQUEST_MAX_BYTES) {
+          throw new Error(
+            "O áudio foi compactado, mas ainda excede o limite de envio do Gemini. Divida o arquivo ou libere a Files API no projeto Google para transcrever arquivos longos.",
+          );
+        }
+
+        converted = true;
+        transcription = await transcribeAudioWithGemini({
+          filePath: compactFilePath,
+          mimeType: "audio/ogg",
+          originalName: `${savedFile.originalName.replace(/\.[^.]+$/, "")}.opus`,
+        });
+      } else {
+        if (!shouldConvert(savedFile.extension)) {
+          throw error;
+        }
+
+        const { convertToWav } = await import("@/lib/audio-convert");
+        const convertedFilePath = await convertToWav(savedFile.filePath);
+        filesToCleanup.push(convertedFilePath);
+        converted = true;
+
+        transcription = await transcribeAudioWithGemini({
+          filePath: convertedFilePath,
+          mimeType: "audio/wav",
+          originalName: `${savedFile.originalName.replace(/\.[^.]+$/, "")}.wav`,
+        });
       }
-
-      const { convertToWav } = await import("@/lib/audio-convert");
-      const convertedFilePath = await convertToWav(savedFile.filePath);
-      filesToCleanup.push(convertedFilePath);
-      converted = true;
-
-      transcription = await transcribeAudioWithGemini({
-        filePath: convertedFilePath,
-        mimeType: "audio/wav",
-        originalName: `${savedFile.originalName.replace(/\.[^.]+$/, "")}.wav`,
-      });
     }
 
     return NextResponse.json<TranscriptionResponse>({
@@ -98,7 +139,7 @@ export async function POST(request: Request) {
       meta: {
         originalFileName: savedFile.originalName,
         converted,
-        model: getServerEnv().geminiModel,
+        model: getServerEnv().geminiTranscribeModel,
       },
     });
   } catch (error) {
@@ -109,7 +150,7 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error
         ? error.message
-        : "Nao foi possivel concluir a transcricao do audio.";
+        : "Não foi possível concluir a transcrição do áudio.";
 
     return buildJsonError(message, 502);
   } finally {

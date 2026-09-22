@@ -7,6 +7,10 @@ type GeminiSpeechResult = {
   contentType: string;
 };
 
+type GeminiSpeechOptions = {
+  model?: string;
+};
+
 function buildWavHeader(dataLength: number, sampleRate: number) {
   const channels = 1;
   const bitsPerSample = 16;
@@ -54,11 +58,14 @@ function extractInlineAudio(response: any) {
   return null;
 }
 
-export async function synthesizeSpeechWithGemini(text: string): Promise<GeminiSpeechResult> {
+export async function synthesizeSpeechWithGemini(
+  text: string,
+  options: GeminiSpeechOptions = {},
+): Promise<GeminiSpeechResult> {
   const env = getServerEnv();
   const apiKey = requireGeminiApiKey();
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    env.geminiTtsModel,
+    options.model ?? env.geminiTtsModel,
   )}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   try {
@@ -99,7 +106,7 @@ export async function synthesizeSpeechWithGemini(text: string): Promise<GeminiSp
     const inlineAudio = extractInlineAudio(payload);
 
     if (!inlineAudio) {
-      throw new Error("A Milena nao retornou audio para leitura.");
+      throw new Error("A Milena não retornou áudio para leitura.");
     }
 
     const audioBuffer = Buffer.from(inlineAudio.data, "base64");

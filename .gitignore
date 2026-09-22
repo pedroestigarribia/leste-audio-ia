@@ -4,8 +4,15 @@
 tmp/
 node_modules/
 .next/
+.next-dev/
 dist/
 out/
 .DS_Store
 tsconfig.tsbuildinfo
+.next-build-stale/
+docx-qa-*/
+.claude/
+*.lnk
 leste-audio-ia-hostinger.zip
+leste-audio-ia-distribuicao.zip
+leste-audio-ia-distribuicao-privada.zip

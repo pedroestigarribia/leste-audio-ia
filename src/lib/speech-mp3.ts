@@ -15,7 +15,7 @@ function readWavMetadata(input: Buffer): WavMetadata {
     input.toString("ascii", 0, 4) !== "RIFF" ||
     input.toString("ascii", 8, 12) !== "WAVE"
   ) {
-    throw new Error("Audio WAV invalido para conversao em MP3.");
+    throw new Error("Áudio WAV inválido para conversão em MP3.");
   }
 
   const sampleRate = input.readUInt32LE(24);
@@ -24,7 +24,7 @@ function readWavMetadata(input: Buffer): WavMetadata {
   const dataIndex = input.indexOf(Buffer.from("data"));
 
   if (dataIndex === -1 || dataIndex + 8 > input.length) {
-    throw new Error("Audio WAV sem bloco de dados.");
+    throw new Error("Áudio WAV sem bloco de dados.");
   }
 
   const dataStart = dataIndex + 8;
@@ -117,7 +117,7 @@ function encodeWavToMp3(input: Buffer) {
 
 export function encodeWavBuffersToMp3(inputs: Buffer[]): Buffer {
   if (!inputs.length) {
-    throw new Error("Nenhum audio gerado para conversao em MP3.");
+    throw new Error("Nenhum áudio gerado para conversão em MP3.");
   }
 
   const wavParts = inputs.map(readWavMetadata);

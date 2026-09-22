@@ -5,7 +5,7 @@ export async function copyToClipboard(text: string): Promise<void> {
   }
 
   if (typeof document === "undefined") {
-    throw new Error("A copia automatica nao esta disponivel neste ambiente.");
+    throw new Error("A cópia automática não está disponível neste ambiente.");
   }
 
   const textarea = document.createElement("textarea");
@@ -20,6 +20,6 @@ export async function copyToClipboard(text: string): Promise<void> {
   document.body.removeChild(textarea);
 
   if (!copied) {
-    throw new Error("Nao foi possivel copiar automaticamente.");
+    throw new Error("Não foi possível copiar automaticamente.");
   }
 }

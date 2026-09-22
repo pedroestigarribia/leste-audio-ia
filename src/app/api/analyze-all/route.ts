@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { MissingApiKeyError, getDeepSeekMissingKeyMessage, getServerEnv } from "@/lib/env";
-import { runDeepSeekTextTask } from "@/lib/deepseek";
+import { MissingApiKeyError, getDeepSeekMissingKeyMessage } from "@/lib/env";
+import { getTextAiModel, runTextTask } from "@/lib/text-ai";
 import { normalizePlainText } from "@/lib/plain-text";
 import { buildAnalyzeAllPrompt } from "@/prompts/analyzeAll";
 import type { AnalyzeAllItem, AnalyzeAllMode, TextProcessResponse } from "@/types/audio";
@@ -18,8 +18,8 @@ const analyzeAllSchema = z.object({
         transcription: z.string().trim().min(1),
       }),
     )
-    .min(1, "Envie ao menos uma transcricao."),
-  mode: z.enum(["analysis", "tasks", "keyData", "reply"]).default("analysis"),
+    .min(1, "Envie ao menos uma transcrição."),
+  mode: z.enum(["analysis", "tasks", "keyData", "reply", "intent"]).default("analysis"),
 });
 
 export async function POST(request: Request) {
@@ -31,15 +31,15 @@ export async function POST(request: Request) {
       return NextResponse.json<TextProcessResponse>(
         {
           ok: false,
-          error: parsedBody.error.issues[0]?.message ?? "Corpo invalido.",
+          error: parsedBody.error.issues[0]?.message ?? "Corpo inválido.",
         },
         { status: 400 },
       );
     }
 
-    const result = await runDeepSeekTextTask({
+    const result = await runTextTask({
       system:
-        "Voce analisa varias transcricoes em portugues brasileiro sem inventar fatos e sem expor raciocinio oculto.",
+        "Você analisa várias transcrições em português brasileiro sem inventar fatos e sem expor raciocínio oculto.",
       prompt: buildAnalyzeAllPrompt(
         parsedBody.data.items as AnalyzeAllItem[],
         parsedBody.data.mode as AnalyzeAllMode,
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     return NextResponse.json<TextProcessResponse>({
       ok: true,
       result: normalizePlainText(result),
-      model: getServerEnv().deepSeekModel,
+      model: getTextAiModel(),
     });
   } catch (error) {
     const message =
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
         ? getDeepSeekMissingKeyMessage()
         : error instanceof Error
           ? error.message
-          : "Falha ao interpretar as transcricoes.";
+          : "Falha ao interpretar as transcrições.";
 
     return NextResponse.json<TextProcessResponse>(
       {

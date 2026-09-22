@@ -1,35 +1,35 @@
 export function buildOrganizePrompt(text: string, mode: "single" | "all"): string {
   const header = mode === "all"
-    ? "Organize o conjunto de transcricoes abaixo para deixa-lo mais claro, mais util e mais facil de consultar, mantendo o sentido original."
-    : "Organize o texto abaixo para deixa-lo mais claro, mantendo o sentido original.";
+    ? "Organize o conjunto de transcrições abaixo para deixá-lo mais claro, mais útil e mais fácil de consultar, mantendo o sentido original."
+    : "Organize o texto abaixo para deixá-lo mais claro, mantendo o sentido original.";
 
   const outputRules =
     mode === "all"
-      ? `Formato de saida:
+      ? `Formato de saída:
 
 1. Contexto geral.
 2. Assuntos agrupados por tema.
-3. Tarefas, pendencias e proximos passos.
-4. Datas, horarios, valores, nomes e lugares.
-5. Texto final limpo e copiavel.`
-      : `Formato de saida:
+3. Tarefas, pendências e próximos passos.
+4. Datas, horários, valores, nomes e lugares.
+5. Texto final limpo e copiável.`
+      : `Formato de saída:
 
 1. Texto reorganizado.
 2. Tarefas ou combinados.
-3. Dvidas, se houver.`;
+3. Dúvidas, se houver.`;
 
   return `${header}
 
 Regras:
 
-- Nao invente informacoes.
-- Nao acrescente intencao que nao esteja no texto.
+- Não invente informações.
+- Não acrescente intenção que não esteja no texto.
 - Corrija apenas estrutura, clareza e ordem das ideias.
 - Preserve nomes, datas, valores, lugares e compromissos.
-- Use portugues brasileiro natural.
-- Entregue uma versao clara e copiavel.
+- Use português brasileiro natural.
+- Entregue uma versão clara e copiável.
 - Se houver trecho duvidoso, mantenha sinalizado.
-- Nao use markdown com **, ##, tabelas ou blocos de codigo.
+- Não use markdown com **, ##, tabelas ou blocos de código.
 - Entregue apenas texto puro.
 
 ${outputRules}

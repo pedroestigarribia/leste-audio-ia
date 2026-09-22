@@ -59,6 +59,34 @@ Regras:
 - Entregue apenas texto puro.`;
   }
 
+  if (mode === "intent") {
+    return `Analise todas as transcrições como um único conjunto e identifique, com profundidade, a intenção global e o que precisa ser feito a partir delas.
+
+Entregue nesta ordem:
+
+1. Assunto e contexto geral.
+2. Intenção principal consolidada.
+3. Intenções secundárias, quando existirem.
+4. Objetivo ou resultado esperado.
+5. O que precisa ser feito, em ações práticas e ordenadas por prioridade.
+6. Requisitos, preferências, restrições e decisões já citadas.
+7. Dados que ainda faltam ou precisam de confirmação.
+8. Riscos, ambiguidades ou conflitos entre as falas.
+9. Sugestões práticas de próximos passos, separadas claramente dos fatos confirmados.
+10. Grau de confiança da interpretação e interpretações alternativas relevantes, se houver.
+
+Regras:
+
+- Considere o conjunto inteiro antes de concluir a intenção.
+- Não invente fatos, pessoas, prazos, decisões ou necessidades.
+- Diferencie explicitamente fatos citados, inferências prováveis e sugestões.
+- Não trate uma ação apenas mencionada como um pedido confirmado sem evidência no contexto.
+- Quando a intenção não estiver clara, diga isso e informe o que falta para torná-la executável.
+- Use português brasileiro direto, natural e copiável.
+- Não use markdown com **, ##, tabelas ou blocos de código.
+- Entregue apenas texto puro.`;
+  }
+
   return `Analise todas as transcricoes abaixo e organize o conteudo em portugues brasileiro.
 
 Entregue:

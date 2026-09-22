@@ -11,7 +11,7 @@ const montserrat = Montserrat({
 
 export const metadata: Metadata = {
   title: "Leste Audio IA",
-  description: "Transcreva audios do WhatsApp, resuma, organize e copie.",
+  description: "Transcreva áudios do WhatsApp, resuma, organize e copie.",
 };
 
 export default function RootLayout({

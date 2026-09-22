@@ -1,50 +1,63 @@
 "use client";
 
-import { Copy, Download, Headphones, MessageSquareText, Sparkles, Volume2 } from "lucide-react";
+import { Copy, Download, Headphones, MessageSquareText, Sparkles, Wand2, Volume2 } from "lucide-react";
 
 import ActionButton from "@/components/ActionButton";
 import ErrorBox from "@/components/ErrorBox";
+import type { PromptTransformFormat } from "@/types/audio";
 
-type GeneralResultKey = "summary" | "organized" | "analysis" | "tasks" | "keyData" | "reply";
+type GeneralResultKey = "summary" | "organized" | "analysis" | "tasks" | "keyData" | "reply" | "intent";
 
 type ResultPanelProps = {
   activeSpeechKey: string | null;
   copiedKey: string | null;
   generalAnalysis: string;
+  generalIntent: string;
   generalKeyData: string;
   generalOrganizedText: string;
   generalReply: string;
   generalSummary: string;
   generalTasks: string;
+  hasPromptSource: boolean;
   hasTranscriptions: boolean;
   isAnalyzeLoading: boolean;
+  isCompleteAnalysisLoading: boolean;
+  isIntentLoading: boolean;
   isKeyDataLoading: boolean;
   isOrganizeLoading: boolean;
+  isPromptLoading: boolean;
   isReplyLoading: boolean;
   isSummaryLoading: boolean;
   isTasksLoading: boolean;
+  promptResult: string;
   speechAudioUrls: Record<string, string | undefined>;
   speechAudioTypes: Record<string, string | undefined>;
   speechErrors: Partial<Record<GeneralResultKey, string>>;
   speechLoadingMap: Partial<Record<GeneralResultKey, boolean>>;
   onAnalyzeAll: () => void;
   onCopyAll: () => void;
+  onCopyAllTranscriptions: () => void;
   onCopyAnalysis: () => void;
+  onCopyIntent: () => void;
   onCopyKeyData: () => void;
   onCopyOrganized: () => void;
+  onCopyPrompt: () => void;
   onCopyReply: () => void;
   onCopySummary: () => void;
   onCopyTasks: () => void;
   onDownloadOrganizedDocx: () => void;
   onDownloadOrganizedTxt: () => void;
   onDownloadSpeech: (key: string, label: string) => void;
+  onDetectIntentAll: () => void;
   onExtractKeyData: () => void;
   onExtractTasks: () => void;
+  onGenerateCompleteAnalysis: () => void;
   onGenerateReply: () => void;
   onOrganizeAll: () => void;
   onSpeakResult: (key: GeneralResultKey, title: string, text: string) => void;
   onStopSpeech: () => void;
   onSummarizeAll: () => void;
+  onTransformToPrompt: (format: PromptTransformFormat) => void;
   previewItems: Array<{
     id: string;
     name: string;
@@ -52,13 +65,42 @@ type ResultPanelProps = {
   }>;
   taskErrors: {
     analysis?: string;
+    intent?: string;
     keyData?: string;
     organize?: string;
     reply?: string;
     summary?: string;
     tasks?: string;
+    prompt?: string;
   };
 };
+
+const promptFormats: Array<{
+  description: string;
+  format: PromptTransformFormat;
+  label: string;
+}> = [
+  {
+    description: "Para produto completo com requisitos, fluxos, telas e critérios de aceite.",
+    format: "app",
+    label: "Prompt para construção de aplicativo",
+  },
+  {
+    description: "Para Next.js, React ou outro app web com frontend, backend, APIs e deploy.",
+    format: "webApp",
+    label: "Prompt para criação de app web",
+  },
+  {
+    description: "Para página de venda, captação, institucional ou campanha.",
+    format: "landingPage",
+    label: "Prompt para criação de landing page",
+  },
+  {
+    description: "Para corrigir, evoluir ou refatorar um projeto que já existe.",
+    format: "existingProject",
+    label: "Prompt para atualização de projeto existente",
+  },
+];
 
 function ResultSection({
   title,
@@ -190,11 +232,14 @@ function SpeechQuickActions({
     <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-sm font-black uppercase text-leste-blue">
-            Leitura com voz da Milena
+          <h3 className="flex items-center gap-2 text-sm font-black uppercase text-leste-blue">
+            <Volume2 className="h-4 w-4 text-rose-500" />
+            Milena Voz
           </h3>
           <p className="mt-1 text-sm text-slate-600">
-            A Milena lê os textos gerados pela IA. Use o player para pausar e o botão Parar para encerrar.
+            Transforme textos, respostas, transcrições, imagens, PDFs e documentos completos em áudio.
+            Escolha o conteúdo, prepare a narração, ajuste voz e velocidade, acompanhe pelo player e
+            baixe o resultado completo ou dividido por capítulos.
           </p>
         </div>
         <div className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold uppercase text-slate-500">
@@ -265,40 +310,52 @@ export default function ResultPanel({
   activeSpeechKey,
   copiedKey,
   generalAnalysis,
+  generalIntent,
   generalKeyData,
   generalOrganizedText,
   generalReply,
   generalSummary,
   generalTasks,
+  hasPromptSource,
   hasTranscriptions,
   isAnalyzeLoading,
+  isCompleteAnalysisLoading,
+  isIntentLoading,
   isKeyDataLoading,
   isOrganizeLoading,
+  isPromptLoading,
   isReplyLoading,
   isSummaryLoading,
   isTasksLoading,
+  promptResult,
   speechAudioUrls,
   speechAudioTypes,
   speechErrors,
   speechLoadingMap,
   onAnalyzeAll,
   onCopyAll,
+  onCopyAllTranscriptions,
   onCopyAnalysis,
+  onCopyIntent,
   onCopyKeyData,
   onCopyOrganized,
+  onCopyPrompt,
   onCopyReply,
   onCopySummary,
   onCopyTasks,
   onDownloadOrganizedDocx,
   onDownloadOrganizedTxt,
   onDownloadSpeech,
+  onDetectIntentAll,
   onExtractKeyData,
   onExtractTasks,
+  onGenerateCompleteAnalysis,
   onGenerateReply,
   onOrganizeAll,
   onSpeakResult,
   onStopSpeech,
   onSummarizeAll,
+  onTransformToPrompt,
   previewItems,
   taskErrors,
 }: ResultPanelProps) {
@@ -306,6 +363,7 @@ export default function ResultPanel({
     { key: "summary" as const, label: "resumo geral", text: generalSummary },
     { key: "organized" as const, label: "organização geral", text: generalOrganizedText },
     { key: "analysis" as const, label: "interpretação geral", text: generalAnalysis },
+    { key: "intent" as const, label: "intenção consolidada", text: generalIntent },
     { key: "tasks" as const, label: "tarefas", text: generalTasks },
     { key: "keyData" as const, label: "dados-chave", text: generalKeyData },
     { key: "reply" as const, label: "resposta WhatsApp", text: generalReply },
@@ -322,7 +380,30 @@ export default function ResultPanel({
           </p>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-sm font-black uppercase text-slate-900">Análise completa automática</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Gera resumo consolidado, temas, interpretação, tarefas, dados-chave, resposta e intenção geral.
+              </p>
+            </div>
+            <ActionButton
+              className="lg:w-auto"
+              disabled={!hasTranscriptions}
+              fullWidth
+              loading={isCompleteAnalysisLoading}
+              onClick={onGenerateCompleteAnalysis}
+              type="button"
+              variant="primary"
+            >
+              <Wand2 className="h-4 w-4" />
+              Gerar análise completa
+            </ActionButton>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <ActionButton
             disabled={!hasTranscriptions}
             fullWidth
@@ -355,6 +436,17 @@ export default function ResultPanel({
           >
             <Sparkles className="h-4 w-4" />
             Interpretar todos
+          </ActionButton>
+          <ActionButton
+            disabled={!hasTranscriptions}
+            fullWidth
+            loading={isIntentLoading}
+            onClick={onDetectIntentAll}
+            type="button"
+            variant="secondary"
+          >
+            <Sparkles className="h-4 w-4" />
+            Identificar intenção geral
           </ActionButton>
           <ActionButton
             disabled={!hasTranscriptions}
@@ -399,6 +491,16 @@ export default function ResultPanel({
           <ActionButton
             disabled={!hasTranscriptions}
             fullWidth
+            onClick={onCopyAllTranscriptions}
+            type="button"
+            variant="secondary"
+          >
+            <Copy className="h-4 w-4" />
+            {copiedKey === "all-transcriptions" ? "Transcrições copiadas" : "Copiar todas as transcrições"}
+          </ActionButton>
+          <ActionButton
+            disabled={!hasTranscriptions}
+            fullWidth
             onClick={onDownloadOrganizedTxt}
             type="button"
             variant="ghost"
@@ -433,6 +535,7 @@ export default function ResultPanel({
       {!generalSummary &&
       !generalOrganizedText &&
       !generalAnalysis &&
+      !generalIntent &&
       !generalTasks &&
       !generalKeyData &&
       !generalReply ? (
@@ -531,6 +634,76 @@ export default function ResultPanel({
           title="Resposta pronta para WhatsApp"
           value={generalReply}
         />
+      ) : null}
+
+      {taskErrors.intent ? <ErrorBox message={taskErrors.intent} /> : null}
+      {generalIntent ? (
+        <ResultSection
+          copied={copiedKey === "general-intent"}
+          copyLabel="Copiar intenção consolidada"
+          onCopy={onCopyIntent}
+          onSpeak={onSpeakResult}
+          speechError={speechErrors.intent}
+          speechKey="intent"
+          speechLoading={speechLoadingMap.intent}
+          title="Intenção consolidada e recomendações"
+          value={generalIntent}
+        />
+      ) : null}
+
+      <div className="space-y-4 rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+        <div className="flex flex-col gap-2">
+          <h3 className="text-lg font-black text-slate-950">Transformar em Prompt</h3>
+          <p className="text-sm text-slate-600">
+            Use o conteúdo já gerado no Painel Geral e, quando houver transcrições disponíveis,
+            complete a análise antes de montar uma instrução técnica e funcional pronta para copiar.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          {promptFormats.map((item) => (
+            <button
+              className="rounded-lg border border-amber-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-leste-blue hover:shadow-editorial disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!hasPromptSource || isPromptLoading || isCompleteAnalysisLoading}
+              key={item.format}
+              onClick={() => onTransformToPrompt(item.format)}
+              type="button"
+            >
+              <span className="flex items-center gap-2 text-sm font-black text-leste-blue">
+                <Wand2 className="h-4 w-4" />
+                {item.label}
+              </span>
+              <span className="mt-2 block text-xs leading-5 text-slate-600">{item.description}</span>
+            </button>
+          ))}
+        </div>
+
+        {isPromptLoading ? (
+          <p className="text-sm font-semibold text-leste-blue">Gerando prompt final...</p>
+        ) : null}
+        {!hasPromptSource ? (
+          <p className="text-xs leading-5 text-slate-500">
+            Gere ao menos um resumo, interpretação, organização, tarefa, dado-chave, resposta ou transcrição antes de transformar em prompt.
+          </p>
+        ) : null}
+        {taskErrors.prompt ? <ErrorBox message={taskErrors.prompt} /> : null}
+      </div>
+
+      {promptResult ? (
+        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-sm font-semibold uppercase text-slate-500">Prompt final pronto para copiar</h3>
+            <ActionButton className="sm:w-auto" fullWidth onClick={onCopyPrompt} type="button" variant="secondary">
+              <Copy className="h-4 w-4" />
+              {copiedKey === "general-prompt" ? "Copiado" : "Copiar prompt"}
+            </ActionButton>
+          </div>
+          <textarea
+            className="min-h-[260px] w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-800 outline-none focus:border-leste-blue"
+            readOnly
+            value={promptResult}
+          />
+        </div>
       ) : null}
     </section>
   );

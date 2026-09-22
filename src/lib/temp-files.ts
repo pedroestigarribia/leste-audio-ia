@@ -31,7 +31,7 @@ export async function ensureTempDir() {
 
     if (errorCode === "EEXIST" || errorCode === "ENOTDIR") {
       throw new Error(
-        `TEMP_UPLOAD_DIR aponta para um caminho invalido ou ocupado: ${tempDir}. Configure TEMP_UPLOAD_DIR para uma pasta gravavel, como ./tmp/uploads.`,
+        `TEMP_UPLOAD_DIR aponta para um caminho inválido ou ocupado: ${tempDir}. Configure TEMP_UPLOAD_DIR para uma pasta gravável, como ./tmp/uploads.`,
       );
     }
 

@@ -4,12 +4,14 @@ import { useRef, useState } from "react";
 import { CloudUpload, Plus } from "lucide-react";
 
 import ActionButton from "@/components/ActionButton";
+import AudioRecorder from "@/components/AudioRecorder";
 
 type UploadAreaProps = {
   acceptedExtensions: string[];
   disabled?: boolean;
   maxFileSizeMb: number;
   onFilesSelected: (files: File[]) => void;
+  onRecordingReady: (file: File) => Promise<void>;
 };
 
 export default function UploadArea({
@@ -17,6 +19,7 @@ export default function UploadArea({
   disabled = false,
   maxFileSizeMb,
   onFilesSelected,
+  onRecordingReady,
 }: UploadAreaProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -86,11 +89,11 @@ export default function UploadArea({
               Aceita {acceptedExtensions.map((extension) => `.${extension}`).join(", ")}.
             </p>
             <p className="text-sm text-slate-500">
-              Limite por arquivo: {maxFileSizeMb} MB. O navegador so envia quando voce clicar em
+              Limite por arquivo: {maxFileSizeMb} MB. O navegador só envia quando você clicar em
               &quot;Transcrever áudios&quot;.
             </p>
             <p className="text-sm text-slate-500">
-              Você pode adicionar mais 10 áudios ou mais depois, sem perder os que já estão na
+              Você pode adicionar mais 20 áudios ou mais depois, sem perder os que já estão na
               lista.
             </p>
           </div>
@@ -108,6 +111,12 @@ export default function UploadArea({
           </ActionButton>
         </div>
       </div>
+
+      <AudioRecorder
+        disabled={disabled}
+        maxFileSizeMb={maxFileSizeMb}
+        onRecordingReady={onRecordingReady}
+      />
     </section>
   );
 }

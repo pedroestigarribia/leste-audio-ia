@@ -66,19 +66,19 @@ export async function extractTextFromImageWithGemini({
 
   try {
     const response = await client.models.generateContent({
-      model: env.geminiModel,
+      model: env.geminiTextModel,
       contents: [
         {
           role: "user",
           parts: [
             {
-              text: `Extraia e organize em portugues brasileiro todo texto visivel nesta imagem.
+              text: `Extraia e organize em português brasileiro todo texto visível nesta imagem.
 
 Regras:
 - Se houver texto, transcreva com fidelidade.
 - Preserve nomes, datas, valores, telefones, e-mails, enderecos e links.
-- Nao invente informacoes que nao estejam visiveis.
-- Se nao houver texto suficiente, descreva objetivamente o conteudo relevante da imagem.
+- Não invente informações que não estejam visíveis.
+- Se não houver texto suficiente, descreva objetivamente o conteúdo relevante da imagem.
 - Nao use markdown com ** ou ##.
 - Entregue apenas texto limpo, organizado e pronto para copiar.
 
@@ -98,7 +98,7 @@ Arquivo: ${originalName}`,
     const text = normalizePlainText(extractTextFromGeminiResponse(response));
 
     if (!text) {
-      throw new Error("A IA nao retornou texto para esta imagem.");
+      throw new Error("A IA não retornou texto para esta imagem.");
     }
 
     return text;

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { MissingApiKeyError, getDeepSeekMissingKeyMessage, getServerEnv } from "@/lib/env";
-import { runDeepSeekTextTask } from "@/lib/deepseek";
+import { MissingApiKeyError, getDeepSeekMissingKeyMessage } from "@/lib/env";
+import { getTextAiModel, runTextTask } from "@/lib/text-ai";
 import { normalizePlainText } from "@/lib/plain-text";
 import { buildOrganizePrompt } from "@/prompts/organize";
 import type { TextProcessResponse } from "@/types/audio";
@@ -24,15 +24,15 @@ export async function POST(request: Request) {
       return NextResponse.json<TextProcessResponse>(
         {
           ok: false,
-          error: parsedBody.error.issues[0]?.message ?? "Corpo invalido.",
+          error: parsedBody.error.issues[0]?.message ?? "Corpo inválido.",
         },
         { status: 400 },
       );
     }
 
-    const result = await runDeepSeekTextTask({
+    const result = await runTextTask({
       system:
-        "Voce organiza transcricoes em portugues brasileiro sem alterar o sentido original.",
+        "Você organiza transcrições em português brasileiro sem alterar o sentido original.",
       prompt: buildOrganizePrompt(parsedBody.data.text, parsedBody.data.mode),
       temperature: 0.2,
     });
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     return NextResponse.json<TextProcessResponse>({
       ok: true,
       result: normalizePlainText(result),
-      model: getServerEnv().deepSeekModel,
+      model: getTextAiModel(),
     });
   } catch (error) {
     const message =

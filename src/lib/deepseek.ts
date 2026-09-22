@@ -63,7 +63,7 @@ export async function runDeepSeekTextTask({
     const output = flattenContent(response.choices[0]?.message?.content);
 
     if (!output) {
-      throw new Error("A API da DeepSeek nao retornou conteudo.");
+      throw new Error("A API da DeepSeek não retornou conteúdo.");
     }
 
     return output;
