@@ -15,6 +15,7 @@ import { ensureTempDir } from "@/lib/temp-files";
 import { runCommand } from "@/lib/run-command";
 import { InvalidVideoSourceUrlError, validatePublicVideoUrl } from "@/lib/video/source-url";
 import { runFfprobe } from "@/lib/video/tools";
+import { getYtDlpBinary } from "@/lib/video/yt-dlp-binary";
 import type { TranscriptionResponse } from "@/types/audio";
 
 export const runtime = "nodejs";
@@ -56,19 +57,8 @@ function errorResponse(error: string, status: number) {
   return NextResponse.json<TranscriptionResponse>({ ok: false, error }, { status });
 }
 
-function getDownloaderBinary() {
-  const env = getServerEnv();
-  const configuredPath = env.ytDlpBin;
-  if (configuredPath && configuredPath !== "yt-dlp") {
-    return path.resolve(process.cwd(), configuredPath);
-  }
-
-  const bundledName = process.env.YOUTUBE_DL_FILENAME || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
-  return path.join(process.cwd(), "node_modules", "youtube-dl-exec", "bin", path.basename(bundledName));
-}
-
 async function runDownloader(args: string[], signal: AbortSignal, timeout: number) {
-  const { stdout } = await runCommand(getDownloaderBinary(), args, {
+  const { stdout } = await runCommand(getYtDlpBinary(), args, {
     signal,
     timeout,
     maxBuffer: 16 * 1024 * 1024,

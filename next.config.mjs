@@ -7,6 +7,10 @@ const nextConfig = {
   // "npm run build" executado em paralelo nunca sobrescreva os chunks que o
   // "next dev" ja carregou em memoria. Producao (build/start) continua em .next.
   distDir: isDev ? ".next-dev" : ".next",
+  outputFileTracingIncludes: {
+    "/api/transcribe-url": ["./node_modules/youtube-dl-exec/bin/**/*"],
+    "/api/cuts/**": ["./node_modules/youtube-dl-exec/bin/**/*"],
+  },
   async headers() {
     return [
       {
