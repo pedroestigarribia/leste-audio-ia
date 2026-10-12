@@ -267,7 +267,7 @@ O ZIP é salvo em `Downloads` com data e hora no nome. Ele exclui `node_modules`
 
 Também é possível executar `iniciar-leste-audio-ia.cmd` diretamente. Ele instala dependências se necessário, verifica a página e abre o navegador em uma porta livre entre `3000` e `3010`.
 
-`npm install` instala `ffmpeg-static` e `@derhuerst/ffprobe-static`; o app também aceita os binários do sistema via `FFMPEG_BIN` e `FFPROBE_BIN`. A transcrição por link do Instagram/YouTube usa o `yt-dlp` empacotado por `youtube-dl-exec`. O instalador normalmente verifica Python; em Linux sem Python, configure `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux` para baixar o executável autossuficiente oficial. Não use `YOUTUBE_DL_FILENAME=yt-dlp_linux` no Windows. `YTDLP_BIN` pode apontar para um binário compatível instalado no sistema. Para `Cortes Inteligentes`, mantenha `yt-dlp` disponível no servidor, pois esse fluxo também pode usar o executável do sistema. O upload local não depende das plataformas.
+`npm install` instala `ffmpeg-static` e `@derhuerst/ffprobe-static`; o app também aceita os binários do sistema via `FFMPEG_BIN` e `FFPROBE_BIN`. A transcrição por link do Instagram/YouTube usa o binário `yt-dlp` baixado por `youtube-dl-exec` e executado pelo `child_process` do Node.js. O instalador normalmente verifica Python; em Linux sem Python, configure `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux` para baixar o executável autossuficiente oficial. Não use `YOUTUBE_DL_FILENAME=yt-dlp_linux` no Windows. `YTDLP_BIN` pode apontar para um binário compatível instalado no sistema. Para `Cortes Inteligentes`, mantenha `yt-dlp` disponível no servidor, pois esse fluxo também pode usar o executável do sistema. O upload local não depende das plataformas.
 
 ### Diretórios de build separados
 
@@ -687,7 +687,7 @@ Além da lista principal pedida, o projeto usa:
 
 - `docx`: para gerar download `.docx` no frontend sem reenviar o conteúdo ao backend.
 - `@breezystack/lamejs`: para gerar MP3 da voz da Milena em memória, sem depender de arquivos temporários ou FFmpeg nessa etapa.
-- `youtube-dl-exec`: wrapper Node.js do projeto `microlinkhq/youtube-dl-exec` para executar `yt-dlp` no servidor na aquisição temporária de áudio a partir de links. O instalador upstream baixa o binário; em Linux sem Python, use as variáveis `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux`. Veja as limitações de acesso das plataformas acima.
+- `youtube-dl-exec`: usado para instalar o binário `yt-dlp`; a rota de links executa o binário com `child_process.execFile` para evitar a incompatibilidade de `stdin` do wrapper no runtime da Hostinger. Em Linux sem Python, use `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux`. Veja as limitações de acesso das plataformas acima.
 - `@derhuerst/ffprobe-static`: fornece FFprobe em Windows, Linux e macOS para confirmar duração e presença de áudio em vídeos sem exigir instalação manual.
 - `execa`: para executar `ffmpeg-static` ou `ffmpeg` do sistema com menos acoplamento.
 - `pdf-parse`: para extrair texto pesquisável de PDFs no backend.

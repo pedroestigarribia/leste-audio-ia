@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
+import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import { z } from "zod";
-
-import youtubeDl from "youtube-dl-exec";
 
 import { convertToWav } from "@/lib/audio-convert";
 import { getFileExtension, getMimeTypeFromExtension, isAllowedAudio, shouldConvert } from "@/lib/audio";
@@ -23,6 +23,7 @@ export const dynamic = "force-dynamic";
 
 const requestSchema = z.object({ url: z.string().trim().min(1).max(2048) });
 const deniedAvailability = new Set(["private", "needs_auth", "subscriber_only", "premium_only"]);
+const execFileAsync = promisify(execFile);
 
 type DownloaderMetadata = {
   title?: string;
@@ -57,12 +58,25 @@ function errorResponse(error: string, status: number) {
   return NextResponse.json<TranscriptionResponse>({ ok: false, error }, { status });
 }
 
-function getDownloader() {
+function getDownloaderBinary() {
   const env = getServerEnv();
   const configuredPath = env.ytDlpBin;
-  return configuredPath && configuredPath !== "yt-dlp"
-    ? youtubeDl.create(path.resolve(process.cwd(), configuredPath))
-    : youtubeDl;
+  if (configuredPath && configuredPath !== "yt-dlp") {
+    return path.resolve(process.cwd(), configuredPath);
+  }
+
+  const bundledName = process.env.YOUTUBE_DL_FILENAME || (process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp");
+  return path.join(process.cwd(), "node_modules", "youtube-dl-exec", "bin", path.basename(bundledName));
+}
+
+async function runDownloader(args: string[], signal: AbortSignal, timeout: number) {
+  const { stdout } = await execFileAsync(getDownloaderBinary(), args, {
+    signal,
+    timeout,
+    windowsHide: true,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return stdout;
 }
 
 function getSafeTitle(title: string | undefined, sourceId: string) {
@@ -71,7 +85,10 @@ function getSafeTitle(title: string | undefined, sourceId: string) {
 }
 
 function getDownloaderMessage(error: unknown) {
-  const raw = error instanceof Error ? error.message : "Erro ao acessar a plataforma.";
+  const stderr = error && typeof error === "object" && "stderr" in error ? error.stderr : null;
+  const raw = typeof stderr === "string" && stderr.trim()
+    ? stderr
+    : error instanceof Error ? error.message : "Erro ao acessar a plataforma.";
   if (/login|sign in|cookies|private|authentication|not available for registered/i.test(raw)) {
     return "O Instagram ou YouTube exigiu login ou restringiu este vídeo. Envie o arquivo MP4 para transcrever.";
   }
@@ -92,24 +109,19 @@ export async function POST(request: Request) {
     const tempRoot = await ensureTempDir();
     workDir = await fs.mkdtemp(path.join(tempRoot, "public-video-"));
     const outputTemplate = path.join(workDir, "source.%(ext)s");
-    const downloader = getDownloader();
-    const downloaderOptions = { timeout: env.processTimeoutMs, windowsHide: true, signal: request.signal };
 
     let metadata: DownloaderMetadata;
     try {
-      const result = await downloader(
+      const result = await runDownloader([
+        "--dump-single-json",
+        "--skip-download",
+        "--no-playlist",
+        "--no-warnings",
+        "--quiet",
+        "--ignore-config",
         source.url,
-        {
-          dumpSingleJson: true,
-          skipDownload: true,
-          noPlaylist: true,
-          noWarnings: true,
-          quiet: true,
-          ignoreConfig: true,
-        },
-        downloaderOptions,
-      );
-      metadata = (typeof result === "string" ? JSON.parse(result) : result) as DownloaderMetadata;
+      ], request.signal, env.processTimeoutMs);
+      metadata = JSON.parse(result) as DownloaderMetadata;
     } catch (error) {
       throw new Error(getDownloaderMessage(error));
     }
@@ -127,23 +139,20 @@ export async function POST(request: Request) {
     }
 
     try {
-      await downloader.exec(
+      await runDownloader([
+        "--format", "bestaudio[ext=m4a]/bestaudio/best",
+        "--max-filesize", `${env.maxVideoUploadMb}M`,
+        // Instagram may omit duration from metadata; FFprobe enforces the limit after download.
+        "--match-filters", `duration <=? ${env.maxVideoDurationSec}`,
+        "--no-playlist",
+        "--no-warnings",
+        "--no-progress",
+        "--no-part",
+        "--no-continue",
+        "--ignore-config",
+        "--output", outputTemplate,
         source.url,
-        {
-          format: "bestaudio[ext=m4a]/bestaudio/best",
-          maxFilesize: `${env.maxVideoUploadMb}M`,
-          // Instagram may omit duration from metadata; FFprobe enforces the limit after download.
-          matchFilter: `duration <=? ${env.maxVideoDurationSec}`,
-          noPlaylist: true,
-          noWarnings: true,
-          noProgress: true,
-          noPart: true,
-          continue: false,
-          ignoreConfig: true,
-          output: outputTemplate,
-        },
-        downloaderOptions,
-      );
+      ], request.signal, env.processTimeoutMs);
     } catch (error) {
       throw new Error(getDownloaderMessage(error));
     }
