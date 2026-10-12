@@ -8,6 +8,10 @@ const nextConfig = {
   // "next dev" ja carregou em memoria. Producao (build/start) continua em .next.
   distDir: isDev ? ".next-dev" : ".next",
   outputFileTracingIncludes: {
+    "/api/**": [
+      "./node_modules/ffmpeg-static/ffmpeg*",
+      "./node_modules/@derhuerst/ffprobe-static/ffprobe*",
+    ],
     "/api/transcribe-url": ["./node_modules/youtube-dl-exec/bin/**/*"],
     "/api/cuts/**": ["./node_modules/youtube-dl-exec/bin/**/*"],
   },

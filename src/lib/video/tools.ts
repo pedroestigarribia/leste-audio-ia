@@ -26,7 +26,7 @@ function getFfprobeCandidates() {
   return unique([
     getServerEnv().ffprobeBin,
     ffprobeStatic || undefined,
-    path.join(process.cwd(), "node_modules", "ffprobe-static", "bin", executableName),
+    path.join(process.cwd(), "node_modules", "@derhuerst", "ffprobe-static", executableName),
     "ffprobe",
   ]);
 }
