@@ -12,7 +12,7 @@ import {
   requireGeminiApiKey,
 } from "@/lib/env";
 import { ensureTempDir } from "@/lib/temp-files";
-import { InvalidVideoSourceUrlError, validatePublicVideoUrl } from "@/lib/video/source-url";
+import { InvalidVideoSourceUrlError, type PublicVideoSource, validatePublicVideoUrl } from "@/lib/video/source-url";
 import { runFfprobe } from "@/lib/video/tools";
 import { runYtDlp } from "@/lib/video/yt-dlp-binary";
 import type { TranscriptionResponse } from "@/types/audio";
@@ -85,6 +85,27 @@ function getDownloaderMessage(error: unknown) {
   return `Não foi possível obter este vídeo. O link pode ter restrições ou a plataforma pode ter alterado a extração. Detalhe: ${detail.slice(0, 220)}`;
 }
 
+async function transcribeYoutubeFallback(source: PublicVideoSource, originalError: unknown) {
+  try {
+    const { transcribeYoutubeUrlWithGemini } = await import("@/lib/gemini");
+    const transcription = await transcribeYoutubeUrlWithGemini(source.url);
+    return NextResponse.json<TranscriptionResponse>({
+      ok: true,
+      transcription,
+      meta: {
+        originalFileName: `Video-${source.id}.mp4`,
+        converted: false,
+        model: getServerEnv().geminiAudioUnderstandingModel,
+        sourceUrl: source.url,
+        sourcePlatform: "youtube",
+      },
+    });
+  } catch (error) {
+    const fallbackMessage = error instanceof Error ? error.message : "A alternativa com Gemini falhou.";
+    throw new Error(`${getDownloaderMessage(originalError)} Alternativa: ${fallbackMessage}`);
+  }
+}
+
 export async function POST(request: Request) {
   let workDir = "";
 
@@ -112,6 +133,9 @@ export async function POST(request: Request) {
       ], request.signal, env.processTimeoutMs);
       metadata = JSON.parse(result) as DownloaderMetadata;
     } catch (error) {
+      if (source.platform === "youtube" && !request.signal.aborted) {
+        return await transcribeYoutubeFallback(source, error);
+      }
       throw new Error(getDownloaderMessage(error));
     }
 
@@ -143,6 +167,9 @@ export async function POST(request: Request) {
         source.url,
       ], request.signal, env.processTimeoutMs);
     } catch (error) {
+      if (source.platform === "youtube" && !request.signal.aborted) {
+        return await transcribeYoutubeFallback(source, error);
+      }
       throw new Error(getDownloaderMessage(error));
     }
 

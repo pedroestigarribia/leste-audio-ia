@@ -306,3 +306,30 @@ export async function transcribeAudioWithGemini(params: TranscribeAudioParams): 
     await deleteGeminiRemoteFile(client, uploadedFile);
   }
 }
+
+export async function transcribeYoutubeUrlWithGemini(videoUrl: string): Promise<string> {
+  const env = getServerEnv();
+  const apiKey = requireGeminiApiKey();
+  const client = new GoogleGenAI({ apiKey });
+
+  try {
+    const interaction = await client.interactions.create({
+      model: env.geminiAudioUnderstandingModel,
+      store: false,
+      input: [
+        { type: "text", text: `Considere apenas o áudio deste vídeo.\n\n${TRANSCRIPTION_PROMPT}` },
+        { type: "video", uri: videoUrl },
+      ],
+    });
+    const text = extractTextFromGeminiInteraction(interaction);
+    if (!text) {
+      throw new Error("O Gemini não retornou texto para o vídeo do YouTube.");
+    }
+    return text;
+  } catch (error) {
+    if (error instanceof MissingApiKeyError) {
+      throw error;
+    }
+    throw new Error(`Falha ao transcrever o vídeo do YouTube. ${getGeminiErrorMessage(error)}`);
+  }
+}
