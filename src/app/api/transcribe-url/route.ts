@@ -12,10 +12,9 @@ import {
   requireGeminiApiKey,
 } from "@/lib/env";
 import { ensureTempDir } from "@/lib/temp-files";
-import { runCommand } from "@/lib/run-command";
 import { InvalidVideoSourceUrlError, validatePublicVideoUrl } from "@/lib/video/source-url";
 import { runFfprobe } from "@/lib/video/tools";
-import { getYtDlpBinary } from "@/lib/video/yt-dlp-binary";
+import { runYtDlp } from "@/lib/video/yt-dlp-binary";
 import type { TranscriptionResponse } from "@/types/audio";
 
 export const runtime = "nodejs";
@@ -58,7 +57,7 @@ function errorResponse(error: string, status: number) {
 }
 
 async function runDownloader(args: string[], signal: AbortSignal, timeout: number) {
-  const { stdout } = await runCommand(getYtDlpBinary(), args, {
+  const { stdout } = await runYtDlp(args, {
     signal,
     timeout,
     maxBuffer: 16 * 1024 * 1024,

@@ -758,7 +758,7 @@ Checklist de deploy via GitHub:
    - `TEMP_UPLOAD_DIR`
 11. Configure o domínio `lesteaudio.space` para apontar para o projeto publicado.
 12. Verifique se o ambiente executa os binários empacotados `ffmpeg-static` e `@derhuerst/ffprobe-static`. Configure `FFPROBE_BIN` se preferir o FFprobe do sistema.
-13. Na hospedagem Linux sem Python, configure `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux` nas variáveis de ambiente antes do build. O segundo valor seleciona o executável Linux oficial, que não depende de Python instalado. Não aplique essa configuração ao Windows. Se usar um binário próprio, configure `YTDLP_BIN`.
+13. Na hospedagem Linux sem Python, configure `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux` nas variáveis de ambiente antes do build. O segundo valor seleciona o executável Linux oficial, que não depende de Python instalado. O app usa `TMPDIR` temporário por execução para evitar falha de bibliotecas em `/tmp` montado com `noexec`, conforme a [documentação do PyInstaller](https://pyinstaller.org/en/stable/usage.html#defining-the-extraction-location). Não aplique `YOUTUBE_DL_FILENAME=yt-dlp_linux` ao Windows. Se usar um binário próprio, configure `YTDLP_BIN`.
 14. Se FFmpeg/FFprobe/yt-dlp falharem na Hostinger, use um VPS/plano com esses binários ou mantenha o fluxo por upload de MP4. Links de Instagram/YouTube podem falhar por restrições externas mesmo com o binário instalado.
 15. Garanta que `TEMP_UPLOAD_DIR` aponta para uma pasta gravável, por exemplo `./tmp/uploads`, e não para um arquivo existente. Se aparecer erro `EEXIST`, limpe a pasta temporária e reinicie o app Node.js.
 

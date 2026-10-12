@@ -7,11 +7,10 @@ import { nanoid } from "nanoid";
 import ytdl from "@distube/ytdl-core";
 
 import { getServerEnv } from "@/lib/env";
-import { runCommand } from "@/lib/run-command";
 import { extractYoutubeVideoId, fetchYoutubeOEmbed, buildYoutubeThumbnail } from "@/lib/youtube";
 import { getJobDir } from "@/lib/video/paths";
 import { runFfmpeg } from "@/lib/video/tools";
-import { getYtDlpBinary } from "@/lib/video/yt-dlp-binary";
+import { runYtDlp } from "@/lib/video/yt-dlp-binary";
 import type { VideoMetadata } from "@/types/video";
 
 function getYoutubeUrl(videoId: string) {
@@ -54,7 +53,7 @@ type YoutubeDump = {
 
 async function getYtDlpInfo(videoUrl: string) {
   const env = getServerEnv();
-  const result = await runCommand(getYtDlpBinary(), ["--dump-single-json", "--no-playlist", "--no-warnings", videoUrl], {
+  const result = await runYtDlp(["--dump-single-json", "--no-playlist", "--no-warnings", videoUrl], {
     timeout: env.processTimeoutMs,
   });
   const info = JSON.parse(result.stdout) as YoutubeDump;
@@ -68,8 +67,7 @@ async function getYtDlpInfo(videoUrl: string) {
 
 async function downloadWithYtDlp(videoUrl: string, outputPath: string) {
   const env = getServerEnv();
-  await runCommand(
-    getYtDlpBinary(),
+  await runYtDlp(
     [
       "--no-playlist",
       "--no-warnings",

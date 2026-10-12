@@ -8,12 +8,13 @@ const execFileAsync = promisify(execFile);
 export function runCommand(
   binary: string,
   args: string[],
-  options: { signal?: AbortSignal; timeout?: number; maxBuffer?: number } = {},
+  options: { signal?: AbortSignal; timeout?: number; maxBuffer?: number; env?: NodeJS.ProcessEnv } = {},
 ) {
   return execFileAsync(binary, args, {
     signal: options.signal,
     timeout: options.timeout,
     maxBuffer: options.maxBuffer ?? 32 * 1024 * 1024,
+    env: options.env,
     windowsHide: true,
   });
 }
