@@ -77,24 +77,24 @@ export default function UploadArea({
         type="file"
       />
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-start gap-4">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-leste-blue text-white">
             <CloudUpload className="h-7 w-7" />
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-xl font-bold text-slate-950">Arraste seus áudios aqui</h2>
+            <h2 className="text-xl font-bold text-slate-950">Adicione áudios ou vídeos</h2>
             <p className="text-sm text-slate-600">
               Aceita {acceptedExtensions.map((extension) => `.${extension}`).join(", ")}.
             </p>
             <p className="text-sm text-slate-500">
               Limite por arquivo: {maxFileSizeMb} MB. O navegador só envia quando você clicar em
-              &quot;Transcrever áudios&quot;.
+              &quot;Transcrever mídias&quot;.
             </p>
             <p className="text-sm text-slate-500">
-              Você pode adicionar mais 20 áudios ou mais depois, sem perder os que já estão na
-              lista.
+              Adicione quantos arquivos precisar, inclusive em vários envios. Os arquivos e
+              resultados concluídos permanecem nesta sessão.
             </p>
           </div>
         </div>
@@ -107,7 +107,7 @@ export default function UploadArea({
             variant="secondary"
           >
             <Plus className="h-4 w-4" />
-            Selecionar áudios
+            Selecionar arquivos
           </ActionButton>
         </div>
       </div>

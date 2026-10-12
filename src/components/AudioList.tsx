@@ -32,7 +32,7 @@ type AudioListProps = {
   taskErrors: Record<string, string | undefined>;
 };
 
-const activeStatuses = new Set(["uploading", "converting", "transcribing"]);
+const activeStatuses = new Set(["downloading", "uploading", "converting", "transcribing"]);
 const audioContentKinds: AudioContentKind[] = [
   "article",
   "businessPlan",
@@ -83,6 +83,10 @@ export default function AudioList({
     return <EmptyState />;
   }
 
+  const queuePositions = new Map(
+    items.filter((item) => item.status === "queued").map((item, index) => [item.id, index + 1]),
+  );
+
   return (
     <div className="grid gap-5">
       {items.map((item) => (
@@ -113,6 +117,7 @@ export default function AudioList({
           isSummarySpeechLoading={Boolean(loadingMap[`speech:advanced:${item.id}:summary`])}
           isAudioIntelligenceLoading={Boolean(loadingMap[`intelligence:${item.id}`])}
           item={item}
+          queuePosition={queuePositions.get(item.id)}
           key={item.id}
           loadingAudioContentKind={audioContentKinds.find(
             (kind) => loadingMap[`audio-content:${item.id}:${kind}`],
@@ -136,7 +141,7 @@ export default function AudioList({
           onStopSpeech={onStopSpeech}
           organizeError={taskErrors[`organize:${item.id}`]}
           intentError={taskErrors[`intent:${item.id}`]}
-          showRetry={item.status === "error" && !isValidationError(item.error)}
+          showRetry={item.status === "error" && item.originalFileAvailable !== false && !isValidationError(item.error)}
           summaryError={taskErrors[`summary:${item.id}`]}
           speechAudioUrls={speechAudioUrls}
           speechErrors={speechErrors}

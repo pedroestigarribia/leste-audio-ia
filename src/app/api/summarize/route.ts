@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const summarizeSchema = z.object({
-  text: z.string().trim().min(1, "Envie um texto para resumir."),
+  text: z.string().trim().min(1, "Envie um texto para resumir.").max(35_000),
   mode: z.enum(["single", "all"]),
 });
 

@@ -20,26 +20,27 @@ const bodySchema = z.object({
   }).default({}),
 });
 
-type RouteContext = { params: { jobId: string } };
+type RouteContext = { params: Promise<{ jobId: string }> };
 
 export async function POST(request: Request, context: RouteContext) {
   try {
-    assertSafeJobId(context.params.jobId);
-    const current = await getStoredJob(context.params.jobId);
+    const { jobId } = await context.params;
+    assertSafeJobId(jobId);
+    const current = await getStoredJob(jobId);
     if (!current) return Response.json({ ok: false, error: "Job de vídeo não encontrado." }, { status: 404 });
     if (["validating", "acquiring", "probing", "extracting_audio", "transcribing", "analyzing_scenes", "analyzing_semantics", "generating_candidates", "ranking_candidates", "rendering"].includes(current.stage)) {
       return Response.json({ ok: true, job: toPublicJob(current), started: false });
     }
 
     const parsed = bodySchema.parse(await request.json());
-    const prepared = await updateVideoJob(context.params.jobId, {
+    const prepared = await updateVideoJob(jobId, {
       stage: "rendering",
       progress: 1,
       message: "Renderização iniciada.",
       error: undefined,
     });
-    void enqueueVideoJob(context.params.jobId, async (signal) => {
-      await renderSelectedVideoClips(context.params.jobId, parsed.clips, parsed.options, signal);
+    void enqueueVideoJob(jobId, async (signal) => {
+      await renderSelectedVideoClips(jobId, parsed.clips, parsed.options, signal);
     });
     return Response.json({ ok: true, job: toPublicJob(prepared), started: true }, { status: 202 });
   } catch (error) {

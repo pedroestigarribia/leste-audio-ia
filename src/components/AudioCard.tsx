@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Copy, Download, FileAudio2, Headphones, Loader2, Play, RefreshCcw, Sparkles, Trash2, Volume2 } from "lucide-react";
+import { Copy, Download, ExternalLink, FileAudio2, Headphones, Loader2, Play, RefreshCcw, Sparkles, Trash2, Volume2 } from "lucide-react";
 
 import ActionButton from "@/components/ActionButton";
 import AudioIntelligencePanel from "@/components/AudioIntelligencePanel";
@@ -15,6 +15,7 @@ type AudioCardProps = {
   activeSpeechKey: string | null;
   audioPreviewUrl?: string;
   item: AudioItem;
+  queuePosition?: number;
   copiedKey: string | null;
   disableRemove?: boolean;
   disableRetry?: boolean;
@@ -287,6 +288,7 @@ export default function AudioCard({
   activeSpeechKey,
   audioPreviewUrl,
   item,
+  queuePosition,
   copiedKey,
   disableRemove = false,
   disableRetry = false,
@@ -324,23 +326,29 @@ export default function AudioCard({
   showRetry = false,
 }: AudioCardProps) {
   return (
-    <article className="space-y-5 rounded-lg border border-blue-100 bg-white p-4 shadow-editorial sm:p-5" id={`audio-card-${item.id}`}>
+    <article className="space-y-5 rounded-lg border border-blue-100 bg-white p-4 shadow-editorial sm:p-5" id={`audio-card-${item.id}`} style={{ contentVisibility: "auto", containIntrinsicSize: "auto 760px" }}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-start gap-4">
+        <div className="flex min-w-0 items-start gap-3 sm:gap-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-leste-blue">
             <FileAudio2 className="h-6 w-6" />
           </div>
 
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-bold text-slate-950">{item.name}</h3>
+              <h3 className="break-words text-lg font-bold text-slate-950">{item.name}</h3>
               <span className="rounded-md border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-leste-blue">
                 {item.extension.toUpperCase() || "ÁUDIO"}
               </span>
             </div>
             <p className="text-sm text-slate-600">
-              {formatBytes(item.size)} • {formatStatusLabel(item.status)}
+              {item.sourceUrl && item.size > 0 ? `Áudio extraído: ${formatBytes(item.size)}` : item.sourceUrl ? "Vídeo por link" : formatBytes(item.size)} • {formatStatusLabel(item.status)}
             </p>
+            {item.sourceUrl ? (
+              <a className="inline-flex items-center gap-1 break-all text-xs font-semibold text-leste-blue underline-offset-2 hover:underline" href={item.sourceUrl} rel="noreferrer" target="_blank">
+                Abrir vídeo original <ExternalLink aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+              </a>
+            ) : null}
+            {queuePosition ? <p className="text-xs font-semibold text-leste-blue">Posição na fila: {queuePosition}</p> : null}
           </div>
         </div>
 
@@ -376,6 +384,8 @@ export default function AudioCard({
           </audio>
         </div>
       ) : null}
+
+      {item.originalFileAvailable === false ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-5 text-amber-950">O projeto local guardou o texto, não o áudio original. Reenvie este arquivo para ouvir ou tentar transcrever novamente.</p> : null}
 
       <ProgressBar value={item.progress} />
 
@@ -423,38 +433,45 @@ export default function AudioCard({
         </div>
       ) : null}
 
-      {item.autoDetectedIntent ? (
-        <IntentDetectedSection
-          copiedKey={copiedKey}
-          intent={item.autoDetectedIntent}
-          onCopyPrompt={(key, text) => {
-            void navigator.clipboard.writeText(text);
-          }}
-          onExecutePrompt={onExecutePrompt}
-        />
-      ) : null}
-
       {item.transcription ? (
-        <AudioIntelligencePanel
-          activeSpeechKey={activeSpeechKey}
-          analysis={item.audioIntelligence}
-          copiedKey={copiedKey}
-          contentError={contentError}
-          generatedContents={item.generatedContents}
-          isAnalyzing={isAudioIntelligenceLoading}
-          itemId={item.id}
-          loadingContentKind={loadingAudioContentKind}
-          onAnalyze={onAnalyzeAudio}
-          onCopy={onCopy}
-          onDownloadDocx={onDownloadDocx}
-          onDownloadSpeech={onDownloadSpeech}
-          onGenerateContent={onGenerateAudioContent}
-          onSpeak={onSpeakAdvanced}
-          onStopSpeech={onStopSpeech}
-          speechAudioUrls={speechAudioUrls}
-          speechErrors={speechErrors}
-          taskError={audioIntelligenceError}
-        />
+        <details className="rounded-lg border border-blue-100 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-bold text-slate-800">
+            Análise e ferramentas extras <span className="font-normal text-slate-500">(intenção, conteúdo e narração)</span>
+          </summary>
+          <div className="space-y-4 border-t border-slate-100 p-4">
+            {item.autoDetectedIntent ? (
+              <IntentDetectedSection
+                copiedKey={copiedKey}
+                intent={item.autoDetectedIntent}
+                onCopyPrompt={(key, text) => {
+                  void navigator.clipboard.writeText(text);
+                }}
+                onExecutePrompt={onExecutePrompt}
+              />
+            ) : null}
+
+            <AudioIntelligencePanel
+              activeSpeechKey={activeSpeechKey}
+              analysis={item.audioIntelligence}
+              copiedKey={copiedKey}
+              contentError={contentError}
+              generatedContents={item.generatedContents}
+              isAnalyzing={isAudioIntelligenceLoading}
+              itemId={item.id}
+              loadingContentKind={loadingAudioContentKind}
+              onAnalyze={onAnalyzeAudio}
+              onCopy={onCopy}
+              onDownloadDocx={onDownloadDocx}
+              onDownloadSpeech={onDownloadSpeech}
+              onGenerateContent={onGenerateAudioContent}
+              onSpeak={onSpeakAdvanced}
+              onStopSpeech={onStopSpeech}
+              speechAudioUrls={speechAudioUrls}
+              speechErrors={speechErrors}
+              taskError={audioIntelligenceError}
+            />
+          </div>
+        </details>
       ) : null}
 
       {summaryError ? <ErrorBox message={summaryError} /> : null}

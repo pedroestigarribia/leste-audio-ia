@@ -87,6 +87,33 @@ Regras:
 - Entregue apenas texto puro.`;
   }
 
+  if (mode === "analysis") {
+    return `Analise todas as transcrições como uma única sessão, considerando que arquivos podem estar fora de ordem ou tratar de assuntos diferentes.
+
+Entregue:
+
+1. Assunto principal, contexto e objetivo provável do conjunto.
+2. Intenção geral e conclusão principal.
+3. Resumo consolidado.
+4. Organização por temas e relação entre os arquivos.
+5. Linha do tempo e ordem contextual sugerida, indicando o que não pode ser confirmado.
+6. Início, desenvolvimento, mudanças importantes e conclusão, quando houver narrativa contínua.
+7. Tarefas, decisões e próximos passos.
+8. Nomes, empresas, lugares, datas, horários, valores e links.
+9. Contradições, repetições, dúvidas, lacunas e possíveis partes ausentes.
+10. Fatos explícitos separados de inferências e sugestões.
+11. Sugestões práticas e resposta pronta para WhatsApp, quando fizer sentido.
+
+Regras:
+
+- Considere todos os trechos recebidos antes de concluir.
+- Não invente nem conecte relatos sem evidência.
+- Cite o nome do áudio como fonte em fatos relevantes.
+- Se houver dúvida de ordem ou continuidade, sinalize-a.
+- Não use markdown com **, ##, tabelas ou blocos de código.
+- Entregue em português brasileiro direto e texto puro.`;
+  }
+
   return `Analise todas as transcricoes abaixo e organize o conteudo em portugues brasileiro.
 
 Entregue:
@@ -130,6 +157,8 @@ ${item.transcription}`,
     .join("\n\n========================\n\n");
 
   return `${buildPromptByMode(mode)}
+
+Ao mencionar um fato, tarefa, decisão, data ou conclusão concreta, indique a origem como [Fonte: nome do áudio]. Diferencie fatos explícitos de inferências; nunca crie uma fonte ou citação que não esteja no material.
 
 Transcricoes:
 ${joinedTranscriptions}`;

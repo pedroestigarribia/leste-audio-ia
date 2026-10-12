@@ -2,6 +2,7 @@ import "server-only";
 
 import { execa } from "execa";
 import ffmpegStatic from "ffmpeg-static";
+import ffprobeStatic from "@derhuerst/ffprobe-static";
 import path from "node:path";
 
 import { getServerEnv } from "@/lib/env";
@@ -24,6 +25,7 @@ function getFfprobeCandidates() {
   const executableName = process.platform === "win32" ? "ffprobe.exe" : "ffprobe";
   return unique([
     getServerEnv().ffprobeBin,
+    ffprobeStatic || undefined,
     path.join(process.cwd(), "node_modules", "ffprobe-static", "bin", executableName),
     "ffprobe",
   ]);

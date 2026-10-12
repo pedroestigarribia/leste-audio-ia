@@ -33,6 +33,7 @@ Regras:
 - Não use frases motivacionais.
 - Não use markdown com **, ##, tabelas ou blocos de código.
 - Entregue apenas texto puro.
+${mode === "all" ? "- Em fatos, tarefas, decisões, nomes, datas ou valores, cite a origem como [Fonte: nome do áudio] quando ela estiver identificada." : ""}
 
 ${outputRules}
 

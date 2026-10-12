@@ -1,6 +1,7 @@
 export type AudioStatus =
   | "idle"
   | "queued"
+  | "downloading"
   | "uploading"
   | "converting"
   | "transcribing"
@@ -126,6 +127,16 @@ export type ContinuityPlan = {
   generatedAt: string;
 };
 
+export type SessionNarrativeFormat =
+  | "faithful"
+  | "chronological"
+  | "biography"
+  | "storytelling"
+  | "script"
+  | "professionalProfile"
+  | "report"
+  | "whatsapp";
+
 export type SourceReference = {
   sourceId: string;
   chunkId: string;
@@ -147,12 +158,19 @@ export type AskFilesAnswer = {
 export type AudioItem = {
   id: string;
   file: File;
+  sourceUrl?: string;
+  sourcePlatform?: "instagram" | "youtube";
+  /** False when restoring a local project without persisting the original audio. */
+  originalFileAvailable?: boolean;
   name: string;
   size: number;
   type: string;
   extension: string;
   status: AudioStatus;
   progress: number;
+  /** Whether this transcript participates in session-wide AI analysis. */
+  includeInAnalysis?: boolean;
+  isDuplicate?: boolean;
   transcription?: string;
   segments?: TranscriptSegment[];
   speakers?: AudioSpeaker[];
@@ -173,6 +191,10 @@ export type TranscriptionResponse = {
     originalFileName: string;
     converted: boolean;
     model: string;
+    sourceUrl?: string;
+    sourcePlatform?: "instagram" | "youtube";
+    sourceSizeBytes?: number;
+    durationSeconds?: number;
   };
 };
 
@@ -184,6 +206,7 @@ export type TextProcessResponse = {
 };
 
 export type AnalyzeAllItem = {
+  id?: string;
   name: string;
   transcription: string;
 };

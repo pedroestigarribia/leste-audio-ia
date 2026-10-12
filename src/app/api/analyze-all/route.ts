@@ -15,10 +15,11 @@ const analyzeAllSchema = z.object({
     .array(
       z.object({
         name: z.string().trim().min(1),
-        transcription: z.string().trim().min(1),
+        transcription: z.string().min(1).max(9_000),
       }),
     )
-    .min(1, "Envie ao menos uma transcrição."),
+    .min(1, "Envie ao menos uma transcrição.")
+    .max(8, "Cada chamada aceita até 8 trechos; divida o lote em blocos completos."),
   mode: z.enum(["analysis", "tasks", "keyData", "reply", "intent"]).default("analysis"),
 });
 

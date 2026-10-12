@@ -17,10 +17,11 @@ export function formatStatusLabel(status: AudioStatus) {
   const labels: Record<AudioStatus, string> = {
     idle: "Aguardando",
     queued: "Na fila",
+    downloading: "Obtendo vídeo",
     uploading: "Enviando",
     converting: "Convertendo",
     transcribing: "Transcrevendo",
-    done: "Concluido",
+    done: "Concluído",
     error: "Erro",
   };
 

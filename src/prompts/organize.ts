@@ -31,6 +31,7 @@ Regras:
 - Se houver trecho duvidoso, mantenha sinalizado.
 - Não use markdown com **, ##, tabelas ou blocos de código.
 - Entregue apenas texto puro.
+${mode === "all" ? "- Ao reorganizar informações concretas, preserve a origem usando [Fonte: nome do áudio] quando possível. Marque qualquer ligação editorial como sugestão, não como fala original." : ""}
 
 ${outputRules}
 

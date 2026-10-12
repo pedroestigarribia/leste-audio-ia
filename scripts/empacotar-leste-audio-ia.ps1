@@ -24,7 +24,7 @@ $files = @(
   "package.json", "package-lock.json", "next-env.d.ts", "next.config.mjs",
   "postcss.config.mjs", "tailwind.config.ts", "tsconfig.json", "server.js",
   "iniciar-leste-audio-ia.cmd", "iniciar-leste-audio-ia.ps1", "instalar-leste-audio-ia.cmd",
-  "src", "scripts"
+  "src", "public", "scripts"
 )
 
 try {
@@ -51,7 +51,13 @@ try {
   if (Test-Path -LiteralPath $OutputPath) {
     Remove-Item -LiteralPath $OutputPath -Force
   }
-  Compress-Archive -Path $packageRoot -DestinationPath $OutputPath -CompressionLevel Optimal
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $stagingRoot,
+    $OutputPath,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $false
+  )
   $sizeMb = [math]::Round((Get-Item -LiteralPath $OutputPath).Length / 1MB, 2)
   $packageType = if ($IncludeLocalEnv) { "private package with .env.local" } else { "package without secrets" }
   Write-Host "Created ${packageType}: $OutputPath ($sizeMb MB)"

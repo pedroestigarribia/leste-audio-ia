@@ -13,7 +13,7 @@ $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = Join-Path $env:SystemRoot "System32\cmd.exe"
 $shortcut.WorkingDirectory = $project
-$shortcut.Arguments = "/c `"$targetPath`" -Reiniciar"
+$shortcut.Arguments = "/c `"$targetPath`""
 $shortcut.Description = "Iniciar Leste Audio IA em localhost"
 $shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,220"
 $shortcut.Save()

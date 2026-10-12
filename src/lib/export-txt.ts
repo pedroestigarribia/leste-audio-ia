@@ -16,6 +16,7 @@ export type ExportPayload = {
   generalKeyData?: string;
   generalReply?: string;
   promptResult?: string;
+  generalNarrative?: string;
   generatedAt?: Date;
 };
 
@@ -200,6 +201,7 @@ export function buildOrganizedExportText({
   generalKeyData,
   generalReply,
   promptResult,
+  generalNarrative,
   generatedAt = new Date(),
 }: Omit<ExportPayload, "items">) {
   const sections: ExportSection[] = [
@@ -232,6 +234,10 @@ export function buildOrganizedExportText({
       content: normalizePlainText(generalIntent ?? "") || "(sem intenção consolidada)",
     },
     {
+      title: "NARRATIVA FINAL",
+      content: normalizePlainText(generalNarrative ?? "") || "(sem narrativa final)",
+    },
+    {
       title: "PROMPT FINAL",
       content: normalizePlainText(promptResult ?? "") || "(sem prompt final)",
     },
@@ -257,6 +263,7 @@ export function buildExportText({
   generalKeyData,
   generalReply,
   promptResult,
+  generalNarrative,
   generatedAt = new Date(),
 }: ExportPayload) {
   const audioSections = items
@@ -302,6 +309,11 @@ export function buildExportText({
     "INTENÇÃO CONSOLIDADA E RECOMENDAÇÕES",
     "",
     normalizePlainText(generalIntent ?? "") || "(sem intenção consolidada)",
+    "",
+    "========================",
+    "NARRATIVA FINAL",
+    "",
+    normalizePlainText(generalNarrative ?? "") || "(sem narrativa final)",
     "",
     "========================",
     "PROMPT FINAL",

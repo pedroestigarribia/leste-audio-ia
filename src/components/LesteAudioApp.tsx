@@ -10,6 +10,7 @@ import {
   Layers,
   Lightbulb,
   ListTree,
+  Pause,
   Plus,
   Sparkles,
   Square,
@@ -23,6 +24,10 @@ import AppHeader from "@/components/AppHeader";
 import AudioList from "@/components/AudioList";
 import AskFilesPanel, { type AskFileSource } from "@/components/AskFilesPanel";
 import ContinuityPanel from "@/components/ContinuityPanel";
+import EditorialWorkflowPanel from "@/components/EditorialWorkflowPanel";
+import LocalProjectsPanel from "@/components/LocalProjectsPanel";
+import LiveVoicePanel from "@/components/LiveVoicePanel";
+import ProductionFlowNav, { type ProductionStage } from "@/components/ProductionFlowNav";
 import SessionSearchPanel, { type SessionSearchEntry } from "@/components/SessionSearchPanel";
 import ErrorBox from "@/components/ErrorBox";
 import PdfAudiobookPanel from "@/components/PdfAudiobookPanel";
@@ -33,6 +38,7 @@ import MilenaVozPanel from "@/components/MilenaVozPanel";
 import UploadArea from "@/components/UploadArea";
 import YoutubePanel from "@/components/YoutubePanel";
 import SmartClipsPanel from "@/components/SmartClipsPanel";
+import VideoLinkInput from "@/components/VideoLinkInput";
 import type { PdfResultKey, PdfSpeechKey } from "@/components/PdfPanel";
 import type {
   ImageSpeechKey,
@@ -56,7 +62,8 @@ import {
   buildTranscriptionsOnlyText,
 } from "@/lib/export-txt";
 import { normalizePlainText } from "@/lib/plain-text";
-import { processInQueue } from "@/lib/queue";
+import { runDynamicQueue, type DynamicQueueStatus } from "@/lib/queue";
+import { prepareSessionBatches } from "@/lib/session-batches";
 import type {
   AnalyzeAllItem,
   AnalyzeAllMode,
@@ -69,10 +76,12 @@ import type {
   NarrationPrepMode,
   NarrationStyle,
   PreparedText,
+  SessionNarrativeFormat,
   TextProcessResponse,
   TranscriptionResponse,
   UnifiedAction,
 } from "@/types/audio";
+import type { EditorialWorkflowSnapshot, LocalProjectSnapshot, SavedAudioItem } from "@/types/local-project";
 import { buildAudiobookChapters, createPdfAudiobook, type PdfAudiobook } from "@/lib/audiobook";
 
 type LesteAudioAppProps = {
@@ -92,11 +101,44 @@ type SpeechTargetKey =
   | TextVoiceSpeechKey
   | ImageSpeechKey
   | AudiobookSpeechKey
+  | `review:${string}`
   | `advanced:${string}`;
 type SpeechOptions = {
   speed?: number;
   style?: NarrationStyle;
+  autoplay?: boolean;
 };
+type BatchQueueStatus = DynamicQueueStatus;
+type SessionDocxKey =
+  | "transcriptions"
+  | "unifiedTranscript"
+  | "individualSummaries"
+  | "individualInterpretations"
+  | "individualOrganization"
+  | "sessionSummary"
+  | "sessionOrganization"
+  | "sessionInterpretation"
+  | "tasks"
+  | "keyData"
+  | "reply"
+  | "intent"
+  | "narrative";
+
+const SESSION_DOCX_OPTIONS: Array<{ key: SessionDocxKey; label: string }> = [
+  { key: "transcriptions", label: "Transcrições completas" },
+  { key: "unifiedTranscript", label: "Texto integral unificado" },
+  { key: "individualSummaries", label: "Resumos individuais" },
+  { key: "individualInterpretations", label: "Interpretações individuais" },
+  { key: "individualOrganization", label: "Organização individual" },
+  { key: "sessionSummary", label: "Resumo consolidado" },
+  { key: "sessionOrganization", label: "Organização geral por contexto" },
+  { key: "sessionInterpretation", label: "Interpretação geral" },
+  { key: "tasks", label: "Tarefas e decisões" },
+  { key: "keyData", label: "Dados-chave" },
+  { key: "reply", label: "Resposta para WhatsApp" },
+  { key: "intent", label: "Intenção geral" },
+  { key: "narrative", label: "Narrativa final revisada" },
+];
 
 const EMPTY_GENERAL_RESULTS: Record<GeneralResultKey, string> = {
   summary: "",
@@ -181,7 +223,7 @@ function buildApiErrorMessage(error: unknown) {
 }
 
 function isActiveStatus(status: AudioItem["status"]) {
-  return status === "uploading" || status === "converting" || status === "transcribing";
+  return status === "downloading" || status === "uploading" || status === "converting" || status === "transcribing";
 }
 
 function downloadBlob(blob: Blob, fileName: string) {
@@ -198,7 +240,12 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   const [generalResults, setGeneralResults] =
     useState<Record<GeneralResultKey, string>>(EMPTY_GENERAL_RESULTS);
   const [promptResult, setPromptResult] = useState("");
-  const [isTranscribingBatch, setIsTranscribingBatch] = useState(false);
+  const [batchRunStatus, setBatchRunStatus] = useState<BatchQueueStatus>("idle");
+  const [queueNotice, setQueueNotice] = useState("");
+  const [aggregateStale, setAggregateStale] = useState(false);
+  const [aggregateStaleReason, setAggregateStaleReason] = useState<"new-items" | "full">("full");
+  const [analysisProgress, setAnalysisProgress] = useState("");
+  const [lastAnalysisBlocks, setLastAnalysisBlocks] = useState(0);
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
   const [taskErrors, setTaskErrors] = useState<Record<string, string | undefined>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -215,6 +262,27 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   const [speechErrors, setSpeechErrors] = useState<Record<string, string | undefined>>({});
   const [activeSpeechKey, setActiveSpeechKey] = useState<string | null>(null);
   const [continuityPlan, setContinuityPlan] = useState<ContinuityPlan | null>(null);
+  const [sessionTranscriptOrder, setSessionTranscriptOrder] = useState<"original" | "context">("context");
+  const [sessionNarrative, setSessionNarrative] = useState("");
+  const [sessionNarrativeStale, setSessionNarrativeStale] = useState(false);
+  const [sessionNarrativeFormat, setSessionNarrativeFormat] = useState<SessionNarrativeFormat>("faithful");
+  const [workflowHasOutput, setWorkflowHasOutput] = useState(false);
+  const [workflowResetKey, setWorkflowResetKey] = useState(0);
+  const [docxSelection, setDocxSelection] = useState<Record<SessionDocxKey, boolean>>({
+    transcriptions: true,
+    unifiedTranscript: true,
+    individualSummaries: true,
+    individualInterpretations: true,
+    individualOrganization: true,
+    sessionSummary: true,
+    sessionOrganization: true,
+    sessionInterpretation: true,
+    tasks: true,
+    keyData: true,
+    reply: true,
+    intent: true,
+    narrative: true,
+  });
 
   const [sources, setSources] = useState<ContentSource[]>([]);
   const [contextText, setContextText] = useState("");
@@ -226,6 +294,18 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
 
   const itemsRef = useRef<AudioItem[]>([]);
   const cancelledIdsRef = useRef<Set<string>>(new Set());
+  const batchQueueRef = useRef<{
+    status: BatchQueueStatus;
+    pendingIds: string[];
+    itemIds: Set<string>;
+    controllers: Map<string, AbortController>;
+    lastEnqueuedAt: number;
+    wake: Set<() => void>;
+  }>({ status: "idle", pendingIds: [], itemIds: new Set(), controllers: new Map(), lastEnqueuedAt: 0, wake: new Set() });
+  const analyzedItemIdsRef = useRef<Set<string>>(new Set());
+  const sessionEpochRef = useRef(0);
+  const aggregateStaleRef = useRef(false);
+  const aggregateStaleReasonRef = useRef<"new-items" | "full">("full");
   const addMoreInputRef = useRef<HTMLInputElement | null>(null);
   const audioPreviewUrlsRef = useRef<Record<string, string>>({});
   const speechAudioUrlsRef = useRef<Record<string, string | undefined>>({});
@@ -233,6 +313,8 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   const cancelPdfAudiobookRef = useRef(false);
   const imagePreviewUrlRef = useRef<string | null>(null);
   const pdfOperationIdRef = useRef<string | null>(null);
+  const editorialSnapshotRef = useRef<EditorialWorkflowSnapshot | null>(null);
+  const [editorialRestoreSnapshot, setEditorialRestoreSnapshot] = useState<EditorialWorkflowSnapshot | null>(null);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -257,7 +339,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       let changed = false;
 
       for (const item of items) {
-        if (!next[item.id]) {
+        if (!next[item.id] && item.originalFileAvailable !== false) {
           next[item.id] = URL.createObjectURL(item.file);
           changed = true;
         }
@@ -362,29 +444,6 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setActiveSpeechKey(null);
   }
 
-  function clearAggregateResults() {
-    setGeneralResults(EMPTY_GENERAL_RESULTS);
-    setPromptResult("");
-    setTaskErrorState("summary:all");
-    setTaskErrorState("organize:all");
-    setTaskErrorState("analysis:all");
-    setTaskErrorState("tasks:all");
-    setTaskErrorState("keyData:all");
-    setTaskErrorState("reply:all");
-    setTaskErrorState("intent:all");
-    setTaskErrorState("prompt:all");
-    clearAllSpeechResults();
-    setPdfAudiobook((current) =>
-      current
-        ? {
-            ...current,
-            isGenerating: false,
-            chapters: current.chapters.map((chapter) => ({ ...chapter, status: "pending" })),
-          }
-        : current,
-    );
-  }
-
   function updateGeneralResult(key: GeneralResultKey, value: string) {
     clearSpeechResult(key);
     setGeneralResults((current) => ({
@@ -410,6 +469,24 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       itemsRef.current = nextItems;
       return nextItems;
     });
+  }
+
+  function markAggregateStale(reason: "new-items" | "full") {
+    const nextReason = aggregateStaleRef.current && reason === "new-items"
+      ? aggregateStaleReasonRef.current
+      : reason;
+    aggregateStaleRef.current = true;
+    aggregateStaleReasonRef.current = nextReason;
+    setAggregateStale(true);
+    setAggregateStaleReason(nextReason);
+    setSessionNarrativeStale(true);
+  }
+
+  function markAggregateFresh() {
+    aggregateStaleRef.current = false;
+    aggregateStaleReasonRef.current = "full";
+    setAggregateStale(false);
+    setAggregateStaleReason("full");
   }
 
   function buildValidationError(file: File) {
@@ -442,18 +519,85 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       extension,
       status: error ? "error" : "idle",
       progress: 0,
+      includeInAnalysis: true,
+      isDuplicate: false,
       error,
     };
   }
 
-  function appendAudioItems(selectedFiles: File[]) {
+  function appendAudioItems(selectedFiles: File[], enqueueForBatch = true) {
     const newItems = selectedFiles.map(createAudioItem);
-    const nextItems = [...itemsRef.current, ...newItems];
+    const queue = batchQueueRef.current;
+    const isQueueActive = enqueueForBatch && (queue.status === "running" || queue.status === "paused");
+    const queuedIds = new Set(
+      isQueueActive ? newItems.filter(canTranscribeItem).map((item) => item.id) : [],
+    );
+    const nextItems = [
+      ...itemsRef.current,
+      ...newItems.map((item) =>
+        queuedIds.has(item.id) ? { ...item, status: "queued" as const, progress: 5 } : item,
+      ),
+    ];
+
+    if (queuedIds.size) {
+      queue.pendingIds.push(...queuedIds);
+      queuedIds.forEach((id) => queue.itemIds.add(id));
+      queue.lastEnqueuedAt = Date.now();
+      setQueueNotice(`${queuedIds.size} novo(s) áudio(s) adicionado(s) à fila.`);
+    }
 
     itemsRef.current = nextItems;
     setItems(nextItems);
+    markAggregateStale("new-items");
 
     return newItems;
+  }
+
+  function handleVideoLinksAdded(links: string[]) {
+    const addedItems = links.map((sourceUrl) => {
+      const parsed = new URL(sourceUrl);
+      const isInstagram = /(^|\.)instagram\.com$/i.test(parsed.hostname);
+      const sourcePlatform = isInstagram ? "instagram" as const : "youtube" as const;
+      const id = nanoid();
+      const sourceId = sourcePlatform === "instagram"
+        ? parsed.pathname.split("/").filter(Boolean).at(-1) ?? id
+        : parsed.searchParams.get("v") ?? parsed.pathname.split("/").filter(Boolean).at(-1) ?? id;
+      const sourceName = sourcePlatform === "instagram" ? "Instagram Reel" : "YouTube";
+      const name = `${sourceName} · ${sourceId}.mp4`;
+      const file = new File([], name, { type: "video/mp4" });
+
+      return {
+        id,
+        file,
+        sourceUrl,
+        sourcePlatform,
+        name,
+        size: 0,
+        type: "video/mp4",
+        extension: "mp4",
+        status: "idle" as const,
+        progress: 0,
+        includeInAnalysis: true,
+        isDuplicate: false,
+      };
+    });
+
+    const queue = batchQueueRef.current;
+    const queueIsActive = queue.status === "running" || queue.status === "paused";
+    const queuedIds = new Set(queueIsActive ? addedItems.map((item) => item.id) : []);
+    const nextItems = [
+      ...itemsRef.current,
+      ...addedItems.map((item) => queuedIds.has(item.id) ? { ...item, status: "queued" as const, progress: 5 } : item),
+    ];
+    if (queuedIds.size) {
+      queue.pendingIds.push(...queuedIds);
+      queuedIds.forEach((id) => queue.itemIds.add(id));
+      queue.lastEnqueuedAt = Date.now();
+      setQueueNotice(`${queuedIds.size} link(s) adicionado(s) à fila.`);
+    }
+    itemsRef.current = nextItems;
+    setItems(nextItems);
+    markAggregateStale("new-items");
   }
 
   function handleFilesSelected(selectedFiles: File[]) {
@@ -462,14 +606,13 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     }
 
     setAppError(null);
-    clearAggregateResults();
-    setContinuityPlan(null);
     appendAudioItems(selectedFiles);
   }
 
   async function handleRecordedAudio(file: File) {
     setAppError(null);
-    const [recording] = appendAudioItems([file]);
+    const queueIsActive = batchQueueRef.current.status === "running" || batchQueueRef.current.status === "paused";
+    const [recording] = appendAudioItems([file], queueIsActive);
 
     if (!recording) {
       throw new Error("Não foi possível preparar a gravação para transcrição.");
@@ -479,7 +622,40 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       throw new Error(recording.error);
     }
 
+    if (queueIsActive) return;
     await transcribeItem(recording.id);
+  }
+
+  async function handleLiveTranscriptReady(file: File, rawTranscription: string) {
+    const transcription = normalizePlainText(rawTranscription);
+    if (!transcription) {
+      await handleRecordedAudio(file);
+      return;
+    }
+
+    const epoch = sessionEpochRef.current;
+    const [recording] = appendAudioItems([file], false);
+    if (!recording) throw new Error("Não foi possível preparar a escuta ao vivo.");
+    if (recording.error) throw new Error(recording.error);
+
+    const segmentData = buildTranscriptSegments(transcription);
+    updateItem(recording.id, {
+      status: "done",
+      progress: 100,
+      transcription,
+      segments: segmentData.segments,
+      speakers: segmentData.speakers,
+      error: undefined,
+    });
+    addSource("audio", recording.name, transcription, undefined, { audioItemId: recording.id, origin: "live" });
+
+    if (epoch !== sessionEpochRef.current) return;
+    await Promise.allSettled([
+      handleSummarizeItem(recording.id, transcription),
+      handleOrganizeItem(recording.id, transcription),
+      handleAnalyzeAudioItem(recording.id, transcription),
+      detectIntentForItem(recording.id, transcription),
+    ]);
   }
 
   function getCurrentItem(itemId: string) {
@@ -487,7 +663,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   }
 
   function canTranscribeItem(item: AudioItem) {
-    return !isActiveStatus(item.status) && !item.transcription && !buildValidationError(item.file);
+    return item.originalFileAvailable !== false && !isActiveStatus(item.status) && !item.transcription && !buildValidationError(item.file);
   }
 
   function buildExportItems() {
@@ -512,6 +688,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       generalKeyData: generalResults.keyData,
       generalReply: generalResults.reply,
       generalIntent: generalResults.intent,
+      generalNarrative: sessionNarrative,
       promptResult,
     };
   }
@@ -520,22 +697,22 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     return (await response.json()) as T;
   }
 
-  async function transcribeItem(itemId: string) {
+  async function transcribeItem(itemId: string, signal?: AbortSignal) {
+    const sessionEpoch = sessionEpochRef.current;
     const item = getCurrentItem(itemId);
 
     if (!item || cancelledIdsRef.current.has(itemId) || !canTranscribeItem(item)) {
       return;
     }
 
-    clearAggregateResults();
     setTaskErrorState(`summary:${itemId}`);
     setTaskErrorState(`organize:${itemId}`);
     setAppError(null);
 
     try {
       updateItem(itemId, {
-        status: shouldConvert(item.extension) ? "converting" : "uploading",
-        progress: shouldConvert(item.extension) ? 15 : 25,
+        status: item.sourceUrl ? "downloading" : shouldConvert(item.extension) ? "converting" : "uploading",
+        progress: item.sourceUrl ? 12 : shouldConvert(item.extension) ? 15 : 25,
         error: undefined,
         transcription: undefined,
         summary: undefined,
@@ -544,28 +721,29 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         generatedContents: undefined,
       });
 
-      if (shouldConvert(item.extension)) {
+      if (!item.sourceUrl && shouldConvert(item.extension)) {
         await sleep(70);
       }
 
-      updateItem(itemId, {
-        status: "uploading",
-        progress: 35,
-      });
+      updateItem(itemId, { status: item.sourceUrl ? "downloading" : "uploading", progress: 35 });
 
-      const formData = new FormData();
-      formData.append("file", item.file);
-
-      const responsePromise = fetch("/api/transcribe", {
-        method: "POST",
-        body: formData,
-      });
+      const responsePromise = item.sourceUrl
+        ? fetch("/api/transcribe-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: item.sourceUrl }),
+            signal,
+          })
+        : (() => {
+            const formData = new FormData();
+            formData.append("file", item.file);
+            return fetch("/api/transcribe", { method: "POST", body: formData, signal });
+          })();
 
       await sleep(90);
-      updateItem(itemId, {
-        status: "transcribing",
-        progress: 72,
-      });
+      if (!item.sourceUrl) {
+        updateItem(itemId, { status: "transcribing", progress: 72 });
+      }
 
       const response = await responsePromise;
       const payload = await parseJsonResponse<TranscriptionResponse>(response);
@@ -573,11 +751,15 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       if (!response.ok || !payload.ok || !payload.transcription) {
         throw new Error(payload.error || "Falha ao transcrever o áudio.");
       }
+      if (sessionEpoch !== sessionEpochRef.current) return;
 
       const transcription = normalizePlainText(payload.transcription);
       const segmentData = buildTranscriptSegments(transcription);
 
       updateItem(itemId, {
+        name: payload.meta?.originalFileName ?? item.name,
+        size: payload.meta?.sourceSizeBytes ?? item.size,
+        sourcePlatform: payload.meta?.sourcePlatform ?? item.sourcePlatform,
         status: "done",
         progress: 100,
         error: undefined,
@@ -589,9 +771,20 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         audioIntelligence: undefined,
         generatedContents: undefined,
       });
+      markAggregateStale("new-items");
 
-      const itemName = itemsRef.current.find((i) => i.id === itemId)?.name ?? "Áudio";
-      addSource("audio", itemName, transcription);
+      const completedItem = itemsRef.current.find((currentItem) => currentItem.id === itemId);
+      const itemName = payload.meta?.originalFileName ?? completedItem?.name ?? "Áudio";
+      const sourceType = item.sourcePlatform === "youtube"
+        ? "youtube"
+        : item.sourcePlatform === "instagram"
+          ? "url"
+          : "audio";
+      addSource(sourceType, itemName, transcription, undefined, {
+        audioItemId: itemId,
+        sourceUrl: item.sourceUrl,
+        sourcePlatform: payload.meta?.sourcePlatform ?? item.sourcePlatform,
+      });
 
       // Texto e entendimento são produzidos automaticamente após a transcrição.
       // A geração de voz continua opcional e só ocorre quando a pessoa clicar.
@@ -602,6 +795,13 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         detectIntentForItem(itemId, transcription),
       ]);
     } catch (error) {
+      if (signal?.aborted) {
+        if (getCurrentItem(itemId)) {
+          updateItem(itemId, { status: "idle", progress: 0, error: undefined });
+        }
+        return;
+      }
+
       if (getCurrentItem(itemId)) {
         updateItem(itemId, {
           status: "error",
@@ -615,6 +815,21 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   }
 
   async function handleTranscribeBatch() {
+    const queue = batchQueueRef.current;
+
+    if (queue.status === "paused") {
+      queue.status = "running";
+      queue.wake.forEach((wake) => wake());
+      queue.wake.clear();
+      setBatchRunStatus("running");
+      setQueueNotice("Fila retomada.");
+      return;
+    }
+
+    if (queue.status !== "idle") {
+      return;
+    }
+
     const targets = itemsRef.current.filter(canTranscribeItem);
 
     if (!targets.length) {
@@ -623,34 +838,71 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     }
 
     setAppError(null);
-    setIsTranscribingBatch(true);
+    setQueueNotice("");
 
     const targetIds = new Set(targets.map((item) => item.id));
-    setItems((current) =>
-      current.map((item) =>
-        targetIds.has(item.id) ? { ...item, status: "queued", progress: 5, error: undefined } : item,
-      ),
+    queue.status = "running";
+    queue.pendingIds = targets.map((item) => item.id);
+    queue.itemIds = new Set(targets.map((item) => item.id));
+    queue.lastEnqueuedAt = Date.now();
+    setBatchRunStatus("running");
+    const queuedItems = itemsRef.current.map((item) =>
+      targetIds.has(item.id) ? { ...item, status: "queued" as const, progress: 5, error: undefined } : item,
     );
+    itemsRef.current = queuedItems;
+    setItems(queuedItems);
 
-    const results = await processInQueue(
-      targets,
-      async (item) => {
-        if (cancelledIdsRef.current.has(item.id)) {
-          return;
-        }
+    const workerCount = Math.max(1, Math.min(config.maxParallelTranscriptions, targets.length));
+    await runDynamicQueue(queue, workerCount, async (itemId) => {
+      if (cancelledIdsRef.current.has(itemId)) return;
+      const controller = new AbortController();
+      queue.controllers.set(itemId, controller);
+      try {
+        await transcribeItem(itemId, controller.signal);
+      } finally {
+        queue.controllers.delete(itemId);
+      }
+    });
 
-        await transcribeItem(item.id);
-      },
-      config.maxParallelTranscriptions,
+    const wasCancelled = (queue.status as BatchQueueStatus) === "cancelling";
+    queue.status = "idle";
+    queue.pendingIds = [];
+    setBatchRunStatus("idle");
+    const failedCount = itemsRef.current.filter((item) => queue.itemIds.has(item.id) && item.status === "error").length;
+    queue.itemIds.clear();
+    setQueueNotice(
+      wasCancelled
+        ? "Fila cancelada. Próximos áudios não serão iniciados; análises automáticas já iniciadas podem concluir."
+        : failedCount
+          ? `${failedCount} áudio(s) falharam. Os demais foram processados; você pode tentar novamente os arquivos com erro.`
+          : "Fila concluída.",
     );
+  }
 
-    setIsTranscribingBatch(false);
+  function pauseTranscriptionQueue() {
+    const queue = batchQueueRef.current;
+    if (queue.status !== "running") return;
+    queue.status = "paused";
+    setBatchRunStatus("paused");
+    setQueueNotice("Fila pausada. Os áudios já iniciados serão concluídos antes da pausa.");
+  }
 
-    const failedCount = results.filter((result) => result.status === "rejected").length;
-
-    if (failedCount) {
-      setAppError(`${failedCount} áudio(s) falharam. O restante continuou normalmente.`);
-    }
+  function cancelTranscriptionQueue() {
+    const queue = batchQueueRef.current;
+    if (queue.status === "idle") return;
+    queue.status = "cancelling";
+    const pendingIds = new Set(queue.pendingIds);
+    queue.pendingIds = [];
+    for (const controller of queue.controllers.values()) controller.abort();
+    queue.wake.forEach((wake) => wake());
+    queue.wake.clear();
+    const nextItems = itemsRef.current.map((item) =>
+      pendingIds.has(item.id) ? { ...item, status: "idle" as const, progress: 0 } : item,
+    );
+    itemsRef.current = nextItems;
+    setItems(nextItems);
+    setBatchRunStatus("cancelling");
+    setQueueNotice("Cancelando os próximos áudios. Uploads de transcrição podem ser interrompidos; análises automáticas já iniciadas podem concluir.");
   }
 
   const runTextTask = useCallback(async (endpoint: string, body: unknown) => {
@@ -671,6 +923,51 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     return normalizePlainText(payload.result);
   }, []);
 
+  const runChunkedSessionTask = useCallback(async (
+    endpoint: "/api/summarize" | "/api/organize" | "/api/analyze-all",
+    items: AnalyzeAllItem[],
+    mode: AnalyzeAllMode | "all" | "single",
+    label: string,
+    reportProgress = true,
+  ) => {
+    let batches = prepareSessionBatches(items);
+    let completedCalls = 0;
+    let pass = 1;
+
+    while (batches.length) {
+      const batchCount = batches.length;
+      const results: AnalyzeAllItem[] = [];
+
+      for (let index = 0; index < batches.length; index += 1) {
+        if (reportProgress) setAnalysisProgress(`${label}: bloco ${index + 1} de ${batchCount}, etapa ${pass}.`);
+        const batch = batches[index];
+        const result = endpoint === "/api/analyze-all"
+          ? await runTextTask(endpoint, { items: batch, mode })
+          : await runTextTask(endpoint, {
+              text: batch.map((item) => `ÁUDIO: ${item.name}\n\n${item.transcription}`).join("\n\n========================\n\n"),
+              mode: mode === "single" ? "single" : "all",
+            });
+        completedCalls += 1;
+        results.push({ name: `Resultado parcial ${completedCalls}`, transcription: result });
+      }
+
+      if (results.length === 1) {
+        setLastAnalysisBlocks(completedCalls);
+        return { result: results[0].transcription, blocks: completedCalls };
+      }
+
+      const nextBatches = prepareSessionBatches(results);
+      if (pass >= 10 || nextBatches.length >= batches.length) {
+        throw new Error("A consolidação excedeu o limite seguro. Nenhum áudio foi descartado; reduza os arquivos ou consolide em grupos menores.");
+      }
+
+      batches = nextBatches;
+      pass += 1;
+    }
+
+    throw new Error("Não foi possível consolidar as transcrições desta sessão.");
+  }, [runTextTask]);
+
   async function handleSpeakText(
     key: SpeechTargetKey,
     title: string,
@@ -687,10 +984,10 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     const existingUrl = speechAudioUrlsRef.current[key];
 
     if (existingUrl) {
-      setActiveSpeechKey(null);
-      window.setTimeout(() => {
-        setActiveSpeechKey(key);
-      }, 0);
+      if (options?.autoplay !== false) {
+        setActiveSpeechKey(null);
+        window.setTimeout(() => setActiveSpeechKey(key), 0);
+      }
       return existingUrl;
     }
 
@@ -748,7 +1045,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         ...current,
         [key]: "audio/mpeg",
       }));
-      setActiveSpeechKey(key);
+      if (options?.autoplay !== false) setActiveSpeechKey(key);
       return url;
     } catch (error) {
       setSpeechErrors((current) => ({
@@ -798,10 +1095,13 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setTaskErrorState(taskKey);
 
     try {
-      const result = await runTextTask("/api/summarize", {
-        text: transcription,
-        mode: "single",
-      });
+      const { result } = await runChunkedSessionTask(
+        "/api/summarize",
+        [{ name: item.name, transcription }],
+        "single",
+        `Resumo de ${item.name}`,
+        false,
+      );
 
       updateItem(itemId, { summary: result });
       return true;
@@ -826,10 +1126,13 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setTaskErrorState(taskKey);
 
     try {
-      const result = await runTextTask("/api/organize", {
-        text: transcription,
-        mode: "single",
-      });
+      const { result } = await runChunkedSessionTask(
+        "/api/organize",
+        [{ name: item.name, transcription }],
+        "single",
+        `Organização de ${item.name}`,
+        false,
+      );
 
       updateItem(itemId, { organizedText: result });
       return true;
@@ -896,7 +1199,9 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   }
 
   function getCompletedItems(): AnalyzeAllItem[] {
-    const completed = itemsRef.current.filter((item) => item.transcription);
+    const completed = itemsRef.current.filter(
+      (item) => item.transcription && item.includeInAnalysis !== false,
+    );
     const orderedIds = continuityPlan?.groups.flatMap((group) => group.itemIds) ?? [];
     const byId = new Map(completed.map((item) => [item.id, item]));
     const ordered = orderedIds
@@ -906,6 +1211,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
 
     return [...ordered, ...remaining]
       .map((item) => ({
+        id: item.id,
         name: item.name,
         transcription: item.transcription as string,
       }));
@@ -913,6 +1219,21 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
 
   function buildMergedTranscriptions() {
     return getCompletedItems()
+      .map((item) => `ÁUDIO: ${item.name}\n\n${item.transcription}`)
+      .join("\n\n========================\n\n");
+  }
+
+  function buildFullUnifiedTranscript() {
+    const allItems = itemsRef.current.filter((item) => item.transcription);
+    const ids = continuityPlan?.groups.flatMap((group) => group.itemIds) ?? [];
+    const byId = new Map(allItems.map((item) => [item.id, item]));
+    const orderedItems = sessionTranscriptOrder === "context"
+      ? [
+          ...ids.map((id) => byId.get(id)).filter((item): item is AudioItem => Boolean(item)),
+          ...allItems.filter((item) => !ids.includes(item.id)),
+        ]
+      : allItems;
+    return orderedItems
       .map((item) => `ÁUDIO: ${item.name}\n\n${item.transcription}`)
       .join("\n\n========================\n\n");
   }
@@ -930,15 +1251,18 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setTaskErrorState(taskKey);
 
     try {
-      const result = await runTextTask("/api/summarize", {
-        text: mergedText,
-        mode: "all",
-      });
+      const { result } = await runChunkedSessionTask(
+        "/api/summarize",
+        getCompletedItems(),
+        "all",
+        "Resumo consolidado",
+      );
 
       updateGeneralResult("summary", result);
     } catch (error) {
       setTaskErrorState(taskKey, buildApiErrorMessage(error));
     } finally {
+      setAnalysisProgress("");
       setLoadingState(taskKey, false);
     }
   }
@@ -956,15 +1280,18 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setTaskErrorState(taskKey);
 
     try {
-      const result = await runTextTask("/api/organize", {
-        text: mergedText,
-        mode: "all",
-      });
+      const { result } = await runChunkedSessionTask(
+        "/api/organize",
+        getCompletedItems(),
+        "all",
+        "Organização por contexto",
+      );
 
       updateGeneralResult("organized", result);
     } catch (error) {
       setTaskErrorState(taskKey, buildApiErrorMessage(error));
     } finally {
+      setAnalysisProgress("");
       setLoadingState(taskKey, false);
     }
   }
@@ -986,22 +1313,25 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setTaskErrorState(loadingKey);
 
     try {
-      const result = await runTextTask("/api/analyze-all", {
-        items: completedItems,
+      const { result } = await runChunkedSessionTask(
+        "/api/analyze-all",
+        completedItems,
         mode,
-      });
+        "Interpretação da sessão",
+      );
 
       updateGeneralResult(resultKey, result);
     } catch (error) {
       setTaskErrorState(loadingKey, buildApiErrorMessage(error));
     } finally {
+      setAnalysisProgress("");
       setLoadingState(loadingKey, false);
     }
   }
 
   async function handleOrganizeSequence() {
     const sequenceItems = itemsRef.current
-      .filter((item) => item.transcription)
+      .filter((item) => item.transcription && item.includeInAnalysis !== false)
       .map((item) => ({ id: item.id, name: item.name, transcription: item.transcription! }));
 
     if (sequenceItems.length < 2) {
@@ -1012,21 +1342,122 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setLoadingState("sequence:all", true);
     setTaskErrorState("sequence:all");
     try {
-      const response = await fetch("/api/organize-sequence", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: sequenceItems }),
-      });
-      const payload = (await response.json()) as { ok?: boolean; result?: ContinuityPlan; error?: string };
-      if (!response.ok || !payload.ok || !payload.result) {
-        throw new Error(payload.error || "Não foi possível organizar a sequência.");
+      const batches = prepareSessionBatches(sequenceItems);
+      const partialPlans: ContinuityPlan[] = [];
+      const chunkToAudioId = new Map<string, string>();
+      for (const chunk of batches.flat()) {
+        const source = sequenceItems.find((item) =>
+          chunk.id === item.id || Boolean(item.id && chunk.id?.startsWith(`${item.id}-parte-`)),
+        );
+        if (chunk.id && source) chunkToAudioId.set(chunk.id, source.id);
       }
-      setContinuityPlan(payload.result);
+      for (let index = 0; index < batches.length; index += 1) {
+        setAnalysisProgress(`Organizando continuidade: bloco ${index + 1} de ${batches.length}.`);
+        const response = await fetch("/api/organize-sequence", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: batches[index] }),
+        });
+        const payload = (await response.json()) as { ok?: boolean; result?: ContinuityPlan; error?: string };
+        if (!response.ok || !payload.ok || !payload.result) {
+          throw new Error(payload.error || `Não foi possível organizar o bloco ${index + 1}.`);
+        }
+        partialPlans.push(payload.result);
+      }
+
+      const assignedAudioIds = new Set<string>();
+      const groups = partialPlans.flatMap((partial, batchIndex) => partial.groups.flatMap((group) => {
+        const itemIds = Array.from(new Set(group.itemIds
+          .map((id) => chunkToAudioId.get(id) ?? id)
+          .filter((id) => !assignedAudioIds.has(id))));
+        itemIds.forEach((id) => assignedAudioIds.add(id));
+        return itemIds.length ? [{ ...group, id: `bloco-${batchIndex + 1}-${group.id}`, itemIds }] : [];
+      }));
+      const warnings = partialPlans.flatMap((partial) => partial.warnings);
+      if (chunkToAudioId.size > sequenceItems.length) {
+        warnings.unshift("Algumas transcrições longas foram repartidas apenas para análise; cada áudio aparece uma única vez na organização final.");
+      }
+      if (partialPlans.length > 1) {
+        warnings.unshift("Lote grande analisado por blocos. A ordem dentro de cada bloco foi comparada; relações entre blocos devem ser revisadas manualmente.");
+      }
+      setContinuityPlan({ groups, warnings: Array.from(new Set(warnings)), generatedAt: new Date().toISOString() });
+      markAggregateStale("full");
     } catch (error) {
       setTaskErrorState("sequence:all", buildApiErrorMessage(error));
     } finally {
+      setAnalysisProgress("");
       setLoadingState("sequence:all", false);
     }
+  }
+
+  async function handleGenerateSessionNarrative() {
+    const sourceItems = getCompletedItems();
+    if (!sourceItems.length) {
+      setTaskErrorState("narrative:all", "Transcreva e inclua ao menos um áudio na análise.");
+      return;
+    }
+
+    setLoadingState("narrative:all", true);
+    setTaskErrorState("narrative:all");
+    let batches = prepareSessionBatches(sourceItems);
+    let pass = 1;
+    let completedCalls = 0;
+
+    try {
+      while (batches.length) {
+        const resultItems: AnalyzeAllItem[] = [];
+        const batchCount = batches.length;
+        for (let index = 0; index < batchCount; index += 1) {
+          setAnalysisProgress(`Narrativa final: bloco ${index + 1} de ${batchCount}, etapa ${pass}.`);
+          const result = await runTextTask("/api/session-narrative", {
+            items: batches[index],
+            format: sessionNarrativeFormat,
+          });
+          completedCalls += 1;
+          resultItems.push({ name: `Narrativa parcial ${index + 1}`, transcription: result });
+        }
+
+        if (resultItems.length === 1) {
+          clearSpeechResult("review:narrativa-final");
+          setSessionNarrative(resultItems[0].transcription);
+          setSessionNarrativeStale(false);
+          setLastAnalysisBlocks(completedCalls);
+          setAnalysisProgress("");
+          return;
+        }
+
+        const nextBatches = prepareSessionBatches(resultItems);
+        if (pass >= 10 || nextBatches.length >= batches.length) {
+          throw new Error("A narrativa excedeu o limite seguro de consolidação. Os textos originais continuam intactos.");
+        }
+        batches = nextBatches;
+        pass += 1;
+      }
+    } catch (error) {
+      setTaskErrorState("narrative:all", buildApiErrorMessage(error));
+    } finally {
+      setAnalysisProgress("");
+      setLoadingState("narrative:all", false);
+    }
+  }
+
+  function handleToggleAnalysis(itemId: string, include: boolean) {
+    updateItem(itemId, { includeInAnalysis: include });
+    markAggregateStale("full");
+  }
+
+  function handleToggleDuplicate(itemId: string, duplicate: boolean) {
+    updateItem(itemId, { isDuplicate: duplicate });
+  }
+
+  function handleContinuityPlanChange(plan: ContinuityPlan) {
+    setContinuityPlan(plan);
+    markAggregateStale("full");
+  }
+
+  function handleSessionNarrativeChange(text: string) {
+    clearSpeechResult("review:narrativa-final");
+    setSessionNarrative(text);
   }
 
   async function handleAnalyzeAudioItem(itemId: string, transcriptionOverride?: string): Promise<boolean> {
@@ -1142,10 +1573,9 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     }
 
     setAppError(null);
-    setPromptResult("");
 
-    const mergedText = buildMergedTranscriptions();
     const nextResults = { ...generalResults };
+    let allJobsSucceeded = true;
 
     const jobs: Array<{
       key: GeneralResultKey;
@@ -1155,37 +1585,37 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       {
         key: "summary",
         loadingKey: "summary:all",
-        run: () => runTextTask("/api/summarize", { text: mergedText, mode: "all" }),
+        run: async () => (await runChunkedSessionTask("/api/summarize", completedItems, "all", "Resumo consolidado")).result,
       },
       {
         key: "organized",
         loadingKey: "organize:all",
-        run: () => runTextTask("/api/organize", { text: mergedText, mode: "all" }),
+        run: async () => (await runChunkedSessionTask("/api/organize", completedItems, "all", "Organização por contexto")).result,
       },
       {
         key: "analysis",
         loadingKey: "analysis:all",
-        run: () => runTextTask("/api/analyze-all", { items: completedItems, mode: "analysis" }),
+        run: async () => (await runChunkedSessionTask("/api/analyze-all", completedItems, "analysis", "Interpretação geral")).result,
       },
       {
         key: "tasks",
         loadingKey: "tasks:all",
-        run: () => runTextTask("/api/analyze-all", { items: completedItems, mode: "tasks" }),
+        run: async () => (await runChunkedSessionTask("/api/analyze-all", completedItems, "tasks", "Tarefas e próximos passos")).result,
       },
       {
         key: "keyData",
         loadingKey: "keyData:all",
-        run: () => runTextTask("/api/analyze-all", { items: completedItems, mode: "keyData" }),
+        run: async () => (await runChunkedSessionTask("/api/analyze-all", completedItems, "keyData", "Dados-chave")).result,
       },
       {
         key: "reply",
         loadingKey: "reply:all",
-        run: () => runTextTask("/api/analyze-all", { items: completedItems, mode: "reply" }),
+        run: async () => (await runChunkedSessionTask("/api/analyze-all", completedItems, "reply", "Resposta para WhatsApp")).result,
       },
       {
         key: "intent",
         loadingKey: "intent:all",
-        run: () => runTextTask("/api/analyze-all", { items: completedItems, mode: "intent" }),
+        run: async () => (await runChunkedSessionTask("/api/analyze-all", completedItems, "intent", "Intenção geral")).result,
       },
     ];
 
@@ -1198,11 +1628,18 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         nextResults[job.key] = result;
         updateGeneralResult(job.key, result);
       } catch (error) {
+        allJobsSucceeded = false;
         setTaskErrorState(job.loadingKey, buildApiErrorMessage(error));
       } finally {
         setLoadingState(job.loadingKey, false);
       }
     }
+
+    if (allJobsSucceeded) {
+      analyzedItemIdsRef.current = new Set(completedItems.flatMap((item) => item.id ? [item.id] : []));
+      markAggregateFresh();
+    }
+    setAnalysisProgress("");
 
     return nextResults;
   }
@@ -1221,7 +1658,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setAppError(null);
 
     try {
-      const hasAllResults = Object.values(generalResults).every((value) => value.trim());
+      const hasAllResults = !aggregateStale && Object.values(generalResults).every((value) => value.trim());
       const sourceResults =
         hasAllResults || !completedItems.length ? generalResults : await generateCompleteAnalysis();
 
@@ -1238,7 +1675,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         reply: sourceResults.reply,
         summary: sourceResults.summary,
         tasks: sourceResults.tasks,
-        transcriptions: buildMergedTranscriptions(),
+        transcriptions: "",
       });
 
       setPromptResult(result);
@@ -1247,6 +1684,58 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     } finally {
       setLoadingState("prompt:all", false);
     }
+  }
+
+  async function handleUpdateOnlyNewAudioAnalysis() {
+    const currentItems = getCompletedItems();
+    const newItems = currentItems.filter((item) => item.id && !analyzedItemIdsRef.current.has(item.id));
+    if (!newItems.length || !Object.values(generalResults).every((value) => value.trim())) {
+      await generateCompleteAnalysis();
+      return;
+    }
+
+    setAppError(null);
+    let succeeded = true;
+    const jobs: Array<{
+      key: GeneralResultKey;
+      endpoint: "/api/summarize" | "/api/organize" | "/api/analyze-all";
+      mode: AnalyzeAllMode | "all";
+      label: string;
+    }> = [
+      { key: "summary", endpoint: "/api/summarize", mode: "all", label: "Resumo consolidado" },
+      { key: "organized", endpoint: "/api/organize", mode: "all", label: "Organização por contexto" },
+      { key: "analysis", endpoint: "/api/analyze-all", mode: "analysis", label: "Interpretação geral" },
+      { key: "tasks", endpoint: "/api/analyze-all", mode: "tasks", label: "Tarefas e próximos passos" },
+      { key: "keyData", endpoint: "/api/analyze-all", mode: "keyData", label: "Dados-chave" },
+      { key: "reply", endpoint: "/api/analyze-all", mode: "reply", label: "Resposta para WhatsApp" },
+      { key: "intent", endpoint: "/api/analyze-all", mode: "intent", label: "Intenção geral" },
+    ];
+
+    for (const job of jobs) {
+      const loadingKey = `${job.key}:all`;
+      setLoadingState(loadingKey, true);
+      setTaskErrorState(loadingKey);
+      try {
+        const addition = await runChunkedSessionTask(job.endpoint, newItems, job.mode, `${job.label} (novos áudios)`);
+        const combined = await runChunkedSessionTask(job.endpoint, [
+          { name: "Análise anterior da sessão", transcription: generalResults[job.key] },
+          { name: "Contribuição dos novos áudios", transcription: addition.result },
+        ], job.mode, `${job.label} (consolidação)`);
+        updateGeneralResult(job.key, combined.result);
+      } catch (error) {
+        succeeded = false;
+        setTaskErrorState(loadingKey, buildApiErrorMessage(error));
+      } finally {
+        setLoadingState(loadingKey, false);
+      }
+    }
+
+    if (succeeded) {
+      newItems.forEach((item) => { if (item.id) analyzedItemIdsRef.current.add(item.id); });
+      markAggregateFresh();
+      if (sessionNarrative) await handleGenerateSessionNarrative();
+    }
+    setAnalysisProgress("");
   }
 
   async function handleCopy(key: string, text: string) {
@@ -1335,34 +1824,73 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   }
 
   async function handleDownloadCompleteSessionDocx() {
-    const completedItems = buildExportItems().filter((item) => item.transcription?.trim());
+    const completedItems = itemsRef.current.filter((item) => item.transcription?.trim());
 
     if (!completedItems.length) {
       setAppError("Não há transcrições prontas para exportar.");
       return;
     }
 
-    const sections = completedItems.map((item) => ({
-      title: `Áudio: ${item.name}`,
-      content: buildSingleAudioExportSection(item),
-    }));
+    const sections: Array<{ title: string; content: string }> = [];
+    for (const item of completedItems) {
+      if (docxSelection.transcriptions && item.transcription) {
+        sections.push({ title: `Transcrição: ${item.name}`, content: item.transcription });
+      }
+      if (docxSelection.individualSummaries && item.summary) {
+        sections.push({ title: `Resumo individual: ${item.name}`, content: item.summary });
+      }
+      if (docxSelection.individualOrganization && item.organizedText) {
+        sections.push({ title: `Organização individual: ${item.name}`, content: item.organizedText });
+      }
+      if (docxSelection.individualInterpretations && item.audioIntelligence) {
+        const analysis = item.audioIntelligence;
+        sections.push({
+          title: `Interpretação individual: ${item.name}`,
+          content: [
+            `Assunto: ${analysis.subject}`,
+            `Contexto: ${analysis.context}`,
+            `Intenção: ${analysis.primaryIntent}`,
+            analysis.summary,
+            "Pontos principais:",
+            analysis.keyPoints.join("\n"),
+            "Tarefas:",
+            analysis.tasks.map((task) => task.title).join("\n"),
+            "Decisões:",
+            analysis.decisions.map((decision) => decision.text).join("\n"),
+          ].filter(Boolean).join("\n\n"),
+        });
+      }
+    }
+    if (docxSelection.unifiedTranscript) {
+      const fullText = buildFullUnifiedTranscript();
+      if (fullText) sections.push({ title: "Texto integral unificado", content: fullText });
+    }
 
-    const generalSections = [
-      ["Resumo geral", generalResults.summary],
-      ["Organização geral", generalResults.organized],
-      ["Interpretação geral", generalResults.analysis],
-      ["Tarefas e pendências", generalResults.tasks],
-      ["Dados-chave", generalResults.keyData],
-      ["Resposta pronta para WhatsApp", generalResults.reply],
-      ["Intenção consolidada", generalResults.intent],
-    ].filter((entry): entry is [string, string] => Boolean(entry[1].trim()));
+    const generalSections: Array<[SessionDocxKey, string, string]> = [
+      ["sessionSummary", "Resumo consolidado", generalResults.summary],
+      ["sessionOrganization", "Organização geral por contexto", generalResults.organized],
+      ["sessionInterpretation", "Interpretação geral", generalResults.analysis],
+      ["tasks", "Tarefas e decisões", generalResults.tasks],
+      ["keyData", "Dados-chave", generalResults.keyData],
+      ["reply", "Resposta pronta para WhatsApp", generalResults.reply],
+      ["intent", "Intenção geral", generalResults.intent],
+      ["narrative", sessionNarrativeStale ? "Narrativa final revisada (anterior à última alteração)" : "Narrativa final revisada", sessionNarrative],
+    ];
+    for (const [key, title, content] of generalSections) {
+      if (docxSelection[key] && content.trim()) sections.push({ title, content });
+    }
+
+    if (!sections.length) {
+      setAppError("Selecione ao menos uma seção disponível para incluir no DOCX.");
+      return;
+    }
 
     const blob = await buildDocxBlob({
-      fileTitle: "Leste Audio IA - Conteúdo completo",
-      sections: [...sections, ...generalSections.map(([title, content]) => ({ title, content }))],
+      fileTitle: "Leste Audio IA - Conteúdo selecionado da sessão",
+      sections,
     });
 
-    downloadBlob(blob, `${buildExportFileBaseName(new Date())}-conteudo-completo.docx`);
+    downloadBlob(blob, `${buildExportFileBaseName(new Date())}-conteudo-selecionado.docx`);
   }
 
   function handleDownloadOrganizedTxt() {
@@ -1383,6 +1911,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
           generalKeyData: generalResults.keyData,
           generalReply: generalResults.reply,
           generalIntent: generalResults.intent,
+          generalNarrative: sessionNarrative,
           promptResult,
         }),
       ],
@@ -1860,12 +2389,14 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     }
 
     cancelledIdsRef.current.add(itemId);
-    clearAggregateResults();
+    batchQueueRef.current.pendingIds = batchQueueRef.current.pendingIds.filter((id) => id !== itemId);
+    markAggregateStale("full");
     setTaskErrorState(`summary:${itemId}`);
     setTaskErrorState(`organize:${itemId}`);
     setTaskErrorState(`intelligence:${itemId}`);
 
-    setItems((current) => current.filter((entry) => entry.id !== itemId));
+    itemsRef.current = itemsRef.current.filter((entry) => entry.id !== itemId);
+    setItems(itemsRef.current);
     setContinuityPlan((current) => current ? {
       ...current,
       groups: current.groups.map((group) => ({ ...group, itemIds: group.itemIds.filter((id) => id !== itemId) })).filter((group) => group.itemIds.length),
@@ -1889,13 +2420,26 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   }
 
   function handleClearAll() {
+    if (batchQueueRef.current.status !== "idle") cancelTranscriptionQueue();
+    sessionEpochRef.current += 1;
+    editorialSnapshotRef.current = null;
+    setEditorialRestoreSnapshot(null);
+    itemsRef.current = [];
     clearAllSpeechResults();
 
     startTransition(() => {
       cancelledIdsRef.current.clear();
+      analyzedItemIdsRef.current.clear();
       setItems([]);
       setGeneralResults(EMPTY_GENERAL_RESULTS);
       setPromptResult("");
+      setSessionNarrative("");
+      setSessionNarrativeStale(false);
+      setWorkflowHasOutput(false);
+      setWorkflowResetKey((current) => current + 1);
+      markAggregateFresh();
+      setAnalysisProgress("");
+      setLastAnalysisBlocks(0);
       setLoadingMap({});
       setTaskErrors({});
       setPdfState(null);
@@ -1907,16 +2451,140 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
       setSpeechErrors({});
       setCopiedKey(null);
       setAppError(null);
-      setIsTranscribingBatch(false);
+      setQueueNotice("");
       setSources([]);
       setContextText("");
       setLastActionResult(null);
       setContinuityPlan(null);
+      setSessionTranscriptOrder("context");
     });
   }
 
+  const captureProjectSnapshot = useCallback(async (): Promise<LocalProjectSnapshot> => {
+    const savedAudioItems: SavedAudioItem[] = items
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        size: item.size,
+        type: item.type,
+        extension: item.extension,
+        status: item.status === "done" ? "done" : "error",
+        progress: item.status === "done" ? 100 : 0,
+        includeInAnalysis: item.includeInAnalysis,
+        isDuplicate: item.isDuplicate,
+        transcription: item.transcription,
+        segments: item.segments,
+        speakers: item.speakers,
+        segmentWarning: item.segmentWarning,
+        summary: item.summary,
+        organizedText: item.organizedText,
+        autoDetectedIntent: item.autoDetectedIntent,
+        audioIntelligence: item.audioIntelligence,
+        generatedContents: item.generatedContents,
+        error: item.error ?? (item.status === "done" ? undefined : "Arquivo de áudio original não incluído no salvamento local; envie novamente para processar."),
+      }));
+
+    return {
+      version: 1,
+      savedAudioItems,
+      generalResults: { ...generalResults },
+      promptResult,
+      pdf: pdfState ? { ...pdfState, results: { ...pdfState.results } } : null,
+      pdfAudiobook: pdfAudiobook ? {
+        source: pdfAudiobook.source,
+        mode: pdfAudiobook.mode,
+        chapters: pdfAudiobook.chapters.map(({ status: _status, ...chapter }) => chapter),
+      } : null,
+      freeTextValue,
+      imageText: imageTextState ? {
+        fileName: imageTextState.fileName,
+        fileSize: imageTextState.fileSize,
+        text: imageTextState.text,
+      } : null,
+      sources: structuredClone(sources),
+      contextText,
+      lastActionResult,
+      lastActionMode,
+      continuityPlan: continuityPlan ? structuredClone(continuityPlan) : null,
+      sessionTranscriptOrder,
+      sessionNarrative,
+      sessionNarrativeStale,
+      sessionNarrativeFormat,
+      docxSelection: { ...docxSelection },
+      editorial: editorialSnapshotRef.current ? structuredClone(editorialSnapshotRef.current) : null,
+    };
+  }, [items, generalResults, promptResult, pdfState, pdfAudiobook, freeTextValue, imageTextState, sources, contextText, lastActionResult, lastActionMode, continuityPlan, sessionTranscriptOrder, sessionNarrative, sessionNarrativeStale, sessionNarrativeFormat, docxSelection]);
+
+  async function restoreProjectSnapshot(snapshot: LocalProjectSnapshot) {
+    cancelTranscriptionQueue();
+    sessionEpochRef.current += 1;
+    clearAllSpeechResults();
+    clearImagePreviewUrl();
+    for (const url of Object.values(audioPreviewUrlsRef.current)) URL.revokeObjectURL(url);
+    audioPreviewUrlsRef.current = {};
+    setAudioPreviewUrls({});
+    const restoredItems: AudioItem[] = snapshot.savedAudioItems.map((item) => ({
+      ...item,
+      file: new File([], item.name, { type: item.type || "application/octet-stream" }),
+      originalFileAvailable: false,
+      status: item.status,
+      progress: item.status === "done" ? 100 : 0,
+    }));
+    itemsRef.current = restoredItems;
+    setItems(restoredItems);
+    setGeneralResults({ ...EMPTY_GENERAL_RESULTS, ...snapshot.generalResults });
+    setPromptResult(snapshot.promptResult ?? "");
+    setPdfState(snapshot.pdf ? { ...snapshot.pdf, results: { ...EMPTY_PDF_RESULTS, ...snapshot.pdf.results } } : null);
+    setPdfAudiobook(snapshot.pdfAudiobook ? {
+      source: snapshot.pdfAudiobook.source,
+      mode: snapshot.pdfAudiobook.mode,
+      chapters: snapshot.pdfAudiobook.chapters.map((chapter) => ({ ...chapter, status: "pending" as const })),
+      isPreparing: false,
+      isGenerating: false,
+    } : null);
+    setFreeTextValue(snapshot.freeTextValue ?? "");
+    setImageTextState(snapshot.imageText ? { ...snapshot.imageText, previewUrl: "" } : null);
+    setSources(snapshot.sources ?? []);
+    setContextText(snapshot.contextText ?? "");
+    setLastActionResult(snapshot.lastActionResult ?? null);
+    setLastActionMode(snapshot.lastActionMode ?? null);
+    setContinuityPlan(snapshot.continuityPlan ?? null);
+    setSessionTranscriptOrder(snapshot.sessionTranscriptOrder ?? "context");
+    setSessionNarrative(snapshot.sessionNarrative ?? "");
+    setSessionNarrativeStale(Boolean(snapshot.sessionNarrativeStale));
+    setSessionNarrativeFormat(snapshot.sessionNarrativeFormat ?? "faithful");
+    setDocxSelection((current) => ({ ...current, ...(snapshot.docxSelection ?? {}) }));
+    editorialSnapshotRef.current = snapshot.editorial ? structuredClone(snapshot.editorial) : null;
+    setEditorialRestoreSnapshot(snapshot.editorial ?? null);
+    setWorkflowHasOutput(Boolean(snapshot.editorial?.outline || Object.keys(snapshot.editorial?.chapters ?? {}).length || snapshot.editorial?.meetingReport || snapshot.generalResults?.analysis));
+    setWorkflowResetKey((current) => current + 1);
+    setAnalysisProgress("");
+    setLastAnalysisBlocks(0);
+    setLoadingMap({});
+    setTaskErrors({});
+    setSpeechErrors({});
+    setPdfError(undefined);
+    setImageTextError(undefined);
+    setAppError(null);
+    setCopiedKey(null);
+    setQueueNotice("Projeto retomado. Os áudios originais não são armazenados; envie-os novamente se precisar reproduzir ou retranscrever.");
+    markAggregateFresh();
+  }
+
+  const handleEditorialSnapshotChange = useCallback((snapshot: EditorialWorkflowSnapshot) => {
+    editorialSnapshotRef.current = snapshot;
+  }, []);
+
   const completedCount = items.filter((item) => item.status === "done").length;
   const errorCount = items.filter((item) => item.status === "error").length;
+  const queuedCount = items.filter((item) => item.status === "queued").length;
+  const activeCount = items.filter((item) => isActiveStatus(item.status)).length;
+  const analysisItemCount = items.filter((item) => item.transcription && item.includeInAnalysis !== false).length;
+  const excludedAnalysisCount = items.filter((item) => item.transcription && item.includeInAnalysis === false).length;
+  const unanalyzedItemCount = items.filter((item) =>
+    item.transcription && item.includeInAnalysis !== false && !analyzedItemIdsRef.current.has(item.id),
+  ).length;
+  const hasGeneralResults = Object.values(generalResults).some((value) => value.trim());
   const hasCompletedTranscriptions = items.some((item) => Boolean(item.transcription));
   const hasPromptSource =
     hasCompletedTranscriptions || Object.values(generalResults).some((value) => value.trim());
@@ -1933,7 +2601,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
   // --- Central Inteligente: Source Management ---
 
   const addSource = useCallback(
-    (type: ContentSource["type"], name: string, extractedContent: string, originalContent?: string) => {
+    (type: ContentSource["type"], name: string, extractedContent: string, originalContent?: string, metadata?: Record<string, unknown>) => {
       const source: ContentSource = {
         id: nanoid(),
         type,
@@ -1941,7 +2609,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         originalContent,
         extractedContent,
         createdAt: new Date().toISOString(),
-        metadata: {},
+        metadata: metadata ?? {},
         enabledInContext: true,
       };
       setSources((prev) => [...prev, source]);
@@ -1972,6 +2640,40 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     }
     return parts.join("\n\n");
   }, [sources, contextText]);
+
+  const editorialWorkflowSources = useMemo<AnalyzeAllItem[]>(() => {
+    const enabledSources = sources
+      .filter((source) => {
+        if (!source.enabledInContext || !source.extractedContent.trim()) return false;
+        const audioItemId = source.metadata.audioItemId;
+        return source.type !== "audio" || typeof audioItemId !== "string" || !items.some((item) => item.id === audioItemId && item.includeInAnalysis === false);
+      })
+      .map((source) => {
+        const isDerived = source.type === "generated" || source.metadata.provenance === "ai-derived";
+        return {
+          id: source.id,
+          name: isDerived ? `CONTEÚDO DERIVADO/IA — ${source.name} (não é fala original nem fato confirmado)` : source.name,
+          transcription: source.extractedContent,
+        };
+      });
+    const manualContext = contextText.trim();
+    const contextAlreadyContainsSources = enabledSources.length > 0 && enabledSources.every((source) => {
+      const marker = source.transcription.trim().slice(0, Math.min(120, source.transcription.trim().length));
+      return marker.length > 0 && manualContext.includes(marker);
+    });
+    const baseSources: AnalyzeAllItem[] = [
+      ...enabledSources,
+      ...(manualContext ? [{ name: contextAlreadyContainsSources ? "CONTEXTO DE APOIO revisado (pode repetir fontes)" : "CONTEXTO DE APOIO adicional", transcription: manualContext }] : []),
+    ];
+    if (freeTextValue.trim()) baseSources.push({ name: "Texto livre", transcription: freeTextValue.trim() });
+
+    const uniqueSources = new Map<string, AnalyzeAllItem>();
+    for (const source of baseSources) {
+      const key = `${source.name}\u0000${source.transcription}`;
+      uniqueSources.set(key, source);
+    }
+    return Array.from(uniqueSources.values());
+  }, [sources, items, contextText, freeTextValue]);
 
   const askFileSources = useMemo<AskFileSource[]>(() => {
     const audioSources = items
@@ -2075,19 +2777,23 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
           }
           setLastActionResult(payload.result);
         } else {
-          const response = await runTextTask("/api/analyze-all", {
-            items: [{ name: "Contexto", transcription: text }],
-            mode: action === "extrair_tarefas" ? "tasks" : action === "extrair_dados" ? "keyData" : "analysis",
-          });
-          setLastActionResult(response);
+          const mode = action === "extrair_tarefas" ? "tasks" : action === "extrair_dados" ? "keyData" : "analysis";
+          const response = await runChunkedSessionTask(
+            "/api/analyze-all",
+            [{ name: "Contexto consolidado", transcription: text }],
+            mode,
+            "Ação inteligente",
+          );
+          setLastActionResult(response.result);
         }
       } catch (err) {
         setAppError(err instanceof Error ? err.message : "Erro ao executar ação.");
       } finally {
+        setAnalysisProgress("");
         setIsAnalyzing(false);
       }
     },
-    [consolidatedContext, runTextTask],
+    [consolidatedContext, runChunkedSessionTask],
   );
 
   const handleAnalisarCriar = useCallback(async () => {
@@ -2103,17 +2809,35 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setAppError(null);
 
     try {
-      const result = await runTextTask("/api/analyze-all", {
-        items: [{ name: "Contexto completo", transcription: text }],
-        mode: "analysis",
-      });
+      const { result } = await runChunkedSessionTask(
+        "/api/analyze-all",
+        [{ name: "Contexto completo", transcription: text }],
+        "analysis",
+        "Analisar e Criar",
+      );
       setLastActionResult(result);
     } catch (err) {
       setAppError(err instanceof Error ? err.message : "Erro na análise.");
     } finally {
+      setAnalysisProgress("");
       setIsAnalyzing(false);
     }
-  }, [consolidatedContext, runTextTask]);
+  }, [consolidatedContext, runChunkedSessionTask]);
+
+  const hasEditorialInput = editorialWorkflowSources.length > 0;
+  const hasProcessedMaterial = hasCompletedTranscriptions || Boolean(pdfState?.text) || sources.length > 0;
+  const hasUnderstandingOutput = hasGeneralResults || Boolean(continuityPlan);
+  const hasCreationOutput = workflowHasOutput || Boolean(sessionNarrative.trim());
+  const stageState = (complete: boolean, available: boolean): ProductionStage["state"] =>
+    complete ? "complete" : available ? "active" : "ready";
+  const productionStages: ProductionStage[] = [
+    { key: "intake", title: "Adicionar fontes", detail: "Áudio, documentos, imagem, texto, Reels e YouTube", targetId: "workflow-intake", state: stageState(hasEditorialInput, false) },
+    { key: "process", title: "Transcrever e extrair", detail: "Fila de áudios, leitura de arquivos e vídeo", targetId: "workflow-processing", state: stageState(hasProcessedMaterial, hasEditorialInput || items.length > 0) },
+    { key: "understand", title: "Entender e organizar", detail: "Contexto, sequência, decisões e intenção", targetId: "workflow-understanding", state: stageState(hasUnderstandingOutput, hasProcessedMaterial) },
+    { key: "create", title: "Escrever e transformar", detail: "Biografia, reunião, narrativa e voz", targetId: "workflow-writing", state: stageState(hasCreationOutput, hasEditorialInput) },
+    { key: "video", title: "Produzir vídeo", detail: "Cortes inteligentes como etapa própria", targetId: "workflow-video", state: "ready" },
+    { key: "delivery", title: "Revisar e entregar", detail: "Conferir, copiar e baixar os resultados", targetId: "workflow-delivery", state: stageState(false, hasProcessedMaterial || hasUnderstandingOutput || hasCreationOutput) },
+  ];
 
   const handleUseResultAsContext = useCallback(() => {
     if (!lastActionResult) return;
@@ -2121,11 +2845,60 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
     setLastActionResult(null);
   }, [lastActionResult]);
 
+  const handleUseEditorialResultAsContext = useCallback((text: string) => {
+    if (!text.trim()) return;
+    const source: ContentSource = {
+      id: nanoid(),
+      type: "generated",
+      name: `Produção editorial derivada — ${new Date().toLocaleDateString("pt-BR")}`,
+      extractedContent: text.trim(),
+      createdAt: new Date().toISOString(),
+      metadata: { provenance: "ai-derived", derivedFrom: "editorial-workflow", evidenceMustBeRechecked: true },
+      enabledInContext: true,
+    };
+    setSources((current) => [...current, source]);
+    setContextText((current) => [current.trim(), `--- CONTEÚDO DERIVADO PELA IA — NÃO É FALA ORIGINAL NEM FATO CONFIRMADO ---\n${text.trim()}`].filter(Boolean).join("\n\n"));
+    window.requestAnimationFrame(() => {
+      contextEditorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      contextEditorRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
+
   return (
     <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
         <AppHeader appName={config.appName} hasLogo={hasLogo} />
+        <ProductionFlowNav stages={productionStages} />
 
+        <section className="scroll-mt-5 rounded-2xl border border-leste-blue/20 bg-gradient-to-r from-blue-50 to-white p-4 shadow-editorial sm:p-5" id="workflow-intake">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-leste-blue">Etapa 1 · Entrada</p>
+              <h2 className="mt-1 text-xl font-black text-slate-950">Adicione áudio ou vídeo</h2>
+            </div>
+            <p className="text-sm text-slate-600">{items.length ? `${items.length} arquivo(s) na sessão` : "Escolha arquivos ou grave agora"}</p>
+          </div>
+          <div className="mb-3 space-y-3">
+            <VideoLinkInput onAdd={handleVideoLinksAdded} />
+            <div className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+              <span className="h-px flex-1 bg-slate-200" />
+              ou envie do dispositivo
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
+          </div>
+          <UploadArea
+            acceptedExtensions={[...ALLOWED_AUDIO_EXTENSIONS]}
+            maxFileSizeMb={config.maxFileSizeMb}
+            onFilesSelected={handleFilesSelected}
+            onRecordingReady={handleRecordedAudio}
+          />
+        </section>
+
+        <details className="rounded-2xl border border-slate-200 bg-white shadow-editorial">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-extrabold text-slate-800 sm:px-5">
+            Ferramentas de texto e contexto <span className="font-normal text-slate-500">(opcional)</span>
+          </summary>
+          <div className="space-y-4 border-t border-slate-100 p-4 sm:p-5">
         {/* CENTRAL INTELIGENTE */}
         <section className="rounded-lg border border-leste-blue/20 bg-gradient-to-r from-leste-blue/5 to-leste-gold/5 p-5 sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -2160,7 +2933,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         {appError ? <ErrorBox message={appError} /> : null}
 
         {/* SOURCES PANEL */}
-        <section className="rounded-lg border border-blue-100 bg-white p-4 shadow-editorial sm:p-5">
+        <section className="rounded-lg border border-blue-100 bg-white p-4 shadow-editorial sm:p-5" id="workflow-sources">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="flex items-center gap-2 text-sm font-bold text-slate-700">
               <Layers className="h-4 w-4 text-leste-blue" />
@@ -2170,6 +2943,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
               <span className="rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-400">Áudio</span>
               <span className="rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-400">PDF</span>
               <span className="rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-400">Imagem</span>
+              <span className="rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-400">Instagram</span>
               <span className="rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-400">YouTube</span>
             </div>
           </div>
@@ -2191,7 +2965,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
               ))}
             </div>
           ) : (
-            <p className="mt-3 text-sm text-slate-400">Nenhuma fonte adicionada. Transcrições de áudio, PDFs, imagens e vídeos do YouTube aparecerão aqui.</p>
+            <p className="mt-3 text-sm text-slate-400">Nenhuma fonte adicionada. Transcrições de áudio, PDFs, imagens, Instagram Reels e vídeos do YouTube aparecerão aqui.</p>
           )}
         </section>
 
@@ -2292,13 +3066,28 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
             </ActionButton>
           </div>
         </section>
+          </div>
+        </details>
 
-        <UploadArea
-          acceptedExtensions={[...ALLOWED_AUDIO_EXTENSIONS]}
-          maxFileSizeMb={config.maxFileSizeMb}
-          onFilesSelected={handleFilesSelected}
-          onRecordingReady={handleRecordedAudio}
-        />
+        <div className="scroll-mt-5 space-y-4" id="workflow-processing">
+        <details className="rounded-lg border border-blue-100 bg-white shadow-editorial">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-extrabold text-slate-800">
+            Escuta ao vivo e interpretação <span className="font-normal text-slate-500">(opcional)</span>
+          </summary>
+          <div className="border-t border-slate-100 p-4">
+            <LiveVoicePanel
+              key={`live-voice-${workflowResetKey}`}
+              maxFileSizeMb={config.maxFileSizeMb}
+              onLiveTranscriptReady={handleLiveTranscriptReady}
+              onRecordingReady={handleRecordedAudio}
+              transcripts={items.filter((item) => Boolean(item.transcription)).map((item) => ({
+                id: item.id,
+                name: item.name,
+                transcription: item.transcription!,
+              }))}
+            />
+          </div>
+        </details>
 
         <input
           ref={addMoreInputRef}
@@ -2315,28 +3104,56 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
         <section className="rounded-lg border border-blue-100 bg-white p-4 shadow-editorial sm:p-5">
           <div className="flex flex-col gap-4">
             <div>
-              <h2 className="text-xl font-black text-slate-950">Ações da sessão</h2>
+              <h2 className="text-xl font-black text-slate-950">Fila de processamento</h2>
               <p className="mt-2 text-sm text-slate-600">
-                Concorrência máxima: {config.maxParallelTranscriptions} áudio(s) por vez. Você pode
-                adicionar mais arquivos, incluindo vídeos `mp4`, sem apagar a lista atual.
+                Até {config.maxParallelTranscriptions} arquivo(s) em paralelo. Links públicos, áudios e vídeos entram na mesma fila.
               </p>
               <p className="mt-1 text-sm text-slate-500">
-                Lista atual: {items.length} áudio(s).
+                Lista atual: {items.length} item(ns). Você pode adicionar mais durante o processamento.
               </p>
             </div>
 
+            <details className="rounded-lg border border-slate-200 p-3">
+              <summary className="cursor-pointer text-sm font-bold text-slate-800">Escolher conteúdo do DOCX completo</summary>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {SESSION_DOCX_OPTIONS.map((option) => (
+                  <label className="flex items-center gap-2 text-sm text-slate-700" key={option.key}>
+                    <input
+                      checked={docxSelection[option.key]}
+                      onChange={(event) => setDocxSelection((current) => ({
+                        ...current,
+                        [option.key]: event.currentTarget.checked,
+                      }))}
+                      type="checkbox"
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </details>
+
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               <ActionButton
-                disabled={!items.some(canTranscribeItem)}
+                disabled={!items.some(canTranscribeItem) && batchRunStatus === "idle"}
                 fullWidth
-                loading={isTranscribingBatch}
+                loading={batchRunStatus === "running" || batchRunStatus === "cancelling"}
                 onClick={handleTranscribeBatch}
                 type="button"
                 variant="primary"
               >
                 <Sparkles className="h-4 w-4" />
-                Transcrever áudios
+                {batchRunStatus === "paused" ? "Continuar fila" : "Transcrever mídias"}
               </ActionButton>
+              {batchRunStatus === "running" ? (
+                <ActionButton fullWidth onClick={pauseTranscriptionQueue} type="button" variant="secondary">
+                  <Pause className="h-4 w-4" /> Pausar fila
+                </ActionButton>
+              ) : null}
+              {batchRunStatus !== "idle" ? (
+                <ActionButton disabled={batchRunStatus === "cancelling"} fullWidth onClick={cancelTranscriptionQueue} type="button" variant="danger">
+                  <Square className="h-4 w-4" /> Cancelar fila
+                </ActionButton>
+              ) : null}
               <ActionButton
                 fullWidth
                 onClick={() => addMoreInputRef.current?.click()}
@@ -2344,51 +3161,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
                 variant="secondary"
               >
                 <Plus className="h-4 w-4" />
-                Adicionar mais áudios
-              </ActionButton>
-              <ActionButton
-                disabled={!hasCompletedTranscriptions}
-                fullWidth
-                onClick={handleCopyAllTranscriptions}
-                type="button"
-                variant="ghost"
-              >
-                <Copy className="h-4 w-4" />
-                {copiedKey === "all-transcriptions" ? "Copiado" : "Copiar todas as transcrições"}
-              </ActionButton>
-              <ActionButton
-                disabled={!hasCompletedTranscriptions}
-                fullWidth
-                onClick={handleDownloadTranscriptionsTxt}
-                type="button"
-                variant="ghost"
-              >
-                <Download className="h-4 w-4" />
-                Baixar transcrições TXT
-              </ActionButton>
-              <ActionButton
-                disabled={!hasCompletedTranscriptions}
-                fullWidth
-                onClick={() => {
-                  void handleDownloadTranscriptionsDocx();
-                }}
-                type="button"
-                variant="ghost"
-              >
-                <Download className="h-4 w-4" />
-                Baixar transcrições DOCX
-              </ActionButton>
-              <ActionButton
-                disabled={!hasCompletedTranscriptions}
-                fullWidth
-                onClick={() => {
-                  void handleDownloadCompleteSessionDocx();
-                }}
-                type="button"
-                variant="secondary"
-              >
-                <Download className="h-4 w-4" />
-                Baixar conteúdo completo DOCX
+                Adicionar mais arquivos
               </ActionButton>
               <ActionButton fullWidth onClick={handleClearAll} type="button" variant="danger">
                 Limpar tudo
@@ -2403,16 +3176,29 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
               <h2 className="text-xl font-black text-slate-950">Progresso</h2>
               <p className="mt-2 text-sm text-slate-600">
                 {completedCount} de {items.length} concluídos
+                {queuedCount ? ` • ${queuedCount} na fila` : ""}
+                {activeCount ? ` • ${activeCount} em processamento` : ""}
                 {errorCount ? ` • ${errorCount} com erro` : ""}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {analysisItemCount} incluída(s) no entendimento geral{excludedAnalysisCount ? ` • ${excludedAnalysisCount} excluída(s) manualmente` : ""}.
+                {lastAnalysisBlocks > 1 ? ` Último resultado consolidado em ${lastAnalysisBlocks} chamadas/blocos.` : ""}
               </p>
             </div>
           </div>
 
           <ProgressBar label="Processamento geral" value={progressPercent} />
 
+          {queueNotice ? <p aria-live="polite" className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900">{queueNotice}</p> : null}
+          {analysisProgress ? <p aria-live="polite" className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{analysisProgress}</p> : null}
           {appError ? <ErrorBox message={appError} /> : null}
         </section>
 
+        <details className="rounded-lg border border-blue-100 bg-white shadow-editorial">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-extrabold text-slate-800">
+            Documentos e voz <span className="font-normal text-slate-500">(PDF, DOCX, audiobook e Milena)</span>
+          </summary>
+          <div className="space-y-4 border-t border-slate-100 p-4 sm:p-5">
         <PdfPanel
           activeSpeechKey={activeSpeechKey}
           copiedKey={copiedKey}
@@ -2494,10 +3280,16 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
           textValue={freeTextValue}
         />
 
-        <YoutubePanel />
+          </div>
+        </details>
+        </div>
 
-        <SmartClipsPanel />
-
+        <div className="scroll-mt-5 space-y-5" id="workflow-understanding">
+        <details className="rounded-lg border border-blue-100 bg-white shadow-editorial">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-extrabold text-slate-800">
+            Contexto, sequência e busca <span className="font-normal text-slate-500">(opcional)</span>
+          </summary>
+          <div className="space-y-5 border-t border-slate-100 p-4 sm:p-5">
         <ContinuityPanel
           error={taskErrors["sequence:all"]}
           isLoading={Boolean(loadingMap["sequence:all"])}
@@ -2506,11 +3298,34 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
           onAnalyze={() => {
             void handleOrganizeSequence();
           }}
-          onChange={setContinuityPlan}
+          onChange={handleContinuityPlanChange}
+          onGenerateNarrative={() => { void handleGenerateSessionNarrative(); }}
+          onNarrativeChange={handleSessionNarrativeChange}
+          onNarrativeFormatChange={(format) => {
+            setSessionNarrativeFormat(format);
+            setSessionNarrative("");
+            setSessionNarrativeStale(false);
+            clearSpeechResult("review:narrativa-final");
+          }}
           onSpeak={(key, title, text) => {
             void handleSpeakText(key as SpeechTargetKey, title, text, { style: "audiolivro" });
           }}
+          onToggleAnalysis={handleToggleAnalysis}
+          onToggleDuplicate={handleToggleDuplicate}
+          narrative={sessionNarrative}
+          narrativeError={taskErrors["narrative:all"]}
+          narrativeFormat={sessionNarrativeFormat}
+          narrativeLoading={Boolean(loadingMap["narrative:all"])}
+          narrativeStale={sessionNarrativeStale}
+          narrativeSpeechUrl={speechAudioUrls["review:narrativa-final"]}
+          narrativeSpeechLoading={Boolean(loadingMap["speech:review:narrativa-final"])}
+          narrativeSpeechError={speechErrors["review:narrativa-final"]}
+          isNarrativeSpeechActive={activeSpeechKey === "review:narrativa-final"}
+          onDownloadNarrative={() => handleDownloadSpeech("review:narrativa-final", "narrativa-final")}
+          onStopSpeech={handleStopSpeech}
           plan={continuityPlan}
+          transcriptOrder={sessionTranscriptOrder}
+          onTranscriptOrderChange={setSessionTranscriptOrder}
         />
 
         <AskFilesPanel
@@ -2527,6 +3342,8 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
             document.getElementById(`audio-card-${itemId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
           }}
         />
+          </div>
+        </details>
 
         <AudioList
           audioPreviewUrls={audioPreviewUrls}
@@ -2587,6 +3404,28 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
           taskErrors={taskErrors}
         />
 
+        {aggregateStale && hasGeneralResults ? (
+          <section className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-4" role="status">
+            <h2 className="text-lg font-black text-slate-950">Entendimento geral da sessão desatualizado</h2>
+            <p className="text-sm leading-6 text-slate-700">
+              O conjunto mudou após a última análise. Seus resultados e a organização manual foram preservados;
+              atualize a consolidação para incluir os {analysisItemCount} áudios atualmente selecionados.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {aggregateStaleReason === "new-items" && unanalyzedItemCount > 0 && Object.values(generalResults).every((value) => value.trim()) ? (
+                <ActionButton className="sm:w-auto" fullWidth onClick={() => { void handleUpdateOnlyNewAudioAnalysis(); }} type="button" variant="secondary">
+                  Atualizar somente {unanalyzedItemCount} áudio(s) novo(s)
+                </ActionButton>
+              ) : null}
+              <ActionButton className="sm:w-auto" fullWidth loading={[
+                "summary:all", "organize:all", "analysis:all", "tasks:all", "keyData:all", "reply:all", "intent:all",
+              ].some((key) => Boolean(loadingMap[key]))} onClick={() => { void generateCompleteAnalysis(); }} type="button" variant="primary">
+                Regenerar análise completa
+              </ActionButton>
+            </div>
+          </section>
+        ) : null}
+
         <ResultPanel
           activeSpeechKey={activeSpeechKey}
           copiedKey={copiedKey}
@@ -2637,6 +3476,7 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
               "Transcreva ao menos um áudio antes de interpretar todos.",
             );
           }}
+          onChangeResult={updateGeneralResult}
           onCopyAll={handleCopyAllSession}
           onCopyAllTranscriptions={handleCopyAllTranscriptions}
           onCopyAnalysis={() => {
@@ -2728,6 +3568,67 @@ export default function LesteAudioApp({ config, hasLogo }: LesteAudioAppProps) {
             prompt: taskErrors["prompt:all"],
           }}
         />
+        </div>
+
+        <details className="scroll-mt-5 rounded-lg border border-blue-100 bg-white shadow-editorial" id="workflow-writing">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-extrabold text-slate-800">
+            Projetos e criação editorial <span className="font-normal text-slate-500">(biografias, reuniões e capítulos)</span>
+          </summary>
+          <div className="space-y-5 border-t border-slate-100 p-4 sm:p-5">
+        <LocalProjectsPanel
+          captureSnapshot={captureProjectSnapshot}
+          onActiveProjectChange={() => undefined}
+          restoreSnapshot={restoreProjectSnapshot}
+        />
+
+        <EditorialWorkflowPanel
+          key={workflowResetKey}
+          initialSnapshot={editorialRestoreSnapshot}
+          activeSpeechKey={activeSpeechKey}
+          loadingMap={loadingMap}
+          onCopy={(key, text) => { void handleCopy(key, text); }}
+          onUseInContext={handleUseEditorialResultAsContext}
+          onDownloadDocx={(title, sections) => {
+            void buildDocxBlob({ fileTitle: title, sections })
+              .then((blob) => downloadBlob(blob, `${title.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "producao-editorial"}.docx`))
+              .catch((error) => setAppError(buildApiErrorMessage(error)));
+          }}
+          onDownloadSpeech={handleDownloadSpeech}
+          onOutputStateChange={setWorkflowHasOutput}
+          onSnapshotChange={handleEditorialSnapshotChange}
+          onSpeak={(key, title, text, options) => handleSpeakText(key as SpeechTargetKey, title, text, { style: "audiolivro", autoplay: options?.autoplay })}
+          onStopSpeech={handleStopSpeech}
+          sources={editorialWorkflowSources}
+          speechAudioUrls={speechAudioUrls}
+          speechErrors={speechErrors}
+        />
+          </div>
+        </details>
+
+        <section className="scroll-mt-5 space-y-4" id="workflow-video">
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 sm:px-5">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-800">Etapa opcional de produção audiovisual</p>
+            <p className="mt-1 text-sm leading-5 text-slate-700">Analise vídeos do YouTube e depois selecione, revise e gere cortes. Para transcrever Reels, cole o link na entrada ou envie o MP4.</p>
+          </div>
+          <YoutubePanel />
+          <SmartClipsPanel />
+        </section>
+
+        <section className="scroll-mt-5 rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white shadow-editorial sm:p-6" id="workflow-delivery">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-leste-gold">Última etapa</p>
+              <h2 className="mt-1 text-xl font-black sm:text-2xl">Revise e leve o material com você</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-5 text-slate-300">Confira os textos e resultados acima. Depois copie as transcrições ou baixe o conteúdo reunido em DOCX.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[420px]">
+              <ActionButton disabled={!hasCompletedTranscriptions} fullWidth onClick={handleCopyAllTranscriptions} type="button" variant="ghost"><Copy className="h-4 w-4" /> Copiar transcrições</ActionButton>
+              <ActionButton disabled={!hasCompletedTranscriptions} fullWidth onClick={handleDownloadTranscriptionsTxt} type="button" variant="ghost"><Download className="h-4 w-4" /> Baixar transcrições TXT</ActionButton>
+              <ActionButton disabled={!hasCompletedTranscriptions} fullWidth onClick={() => { void handleDownloadTranscriptionsDocx(); }} type="button" variant="ghost"><Download className="h-4 w-4" /> Baixar transcrições DOCX</ActionButton>
+              <ActionButton disabled={!hasCompletedTranscriptions && !hasGeneralResults} fullWidth onClick={() => { void handleDownloadCompleteSessionDocx(); }} type="button" variant="secondary"><Download className="h-4 w-4" /> Baixar pacote da sessão DOCX</ActionButton>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
   );

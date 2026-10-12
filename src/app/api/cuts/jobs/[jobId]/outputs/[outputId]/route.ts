@@ -9,16 +9,17 @@ export const dynamic = "force-dynamic";
 
 const OUTPUT_ID_PATTERN = /^output-[A-Za-z0-9_-]{10,24}$/;
 
-type RouteContext = { params: { jobId: string; outputId: string } };
+type RouteContext = { params: Promise<{ jobId: string; outputId: string }> };
 
 export async function GET(request: Request, context: RouteContext) {
   try {
-    assertSafeJobId(context.params.jobId);
-    if (!OUTPUT_ID_PATTERN.test(context.params.outputId)) {
+    const { jobId, outputId } = await context.params;
+    assertSafeJobId(jobId);
+    if (!OUTPUT_ID_PATTERN.test(outputId)) {
       return Response.json({ ok: false, error: "Identificador de saída inválido." }, { status: 400 });
     }
-    const job = await getStoredJob(context.params.jobId);
-    const output = job?.outputs.find((item) => item.id === context.params.outputId);
+    const job = await getStoredJob(jobId);
+    const output = job?.outputs.find((item) => item.id === outputId);
     if (!output) return Response.json({ ok: false, error: "Saída não encontrada." }, { status: 404 });
     if (new Date(output.expiresAt).getTime() < Date.now()) {
       return Response.json({ ok: false, error: "Esta saída expirou. Gere o corte novamente." }, { status: 410 });

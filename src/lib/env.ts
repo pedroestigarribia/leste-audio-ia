@@ -10,6 +10,7 @@ const DEFAULTS = {
   geminiTtsModel: "gemini-3.1-flash-tts-preview",
   geminiTtsAudiobookModel: "gemini-2.5-pro-preview-tts",
   geminiLiveModel: "gemini-3.1-flash-live-preview",
+  geminiLiveTranscribeModel: "gemini-3.5-transcribe-live",
   geminiTtsVoice: "Kore",
   textAiProvider: "gemini" as const,
   deepSeekBaseUrl: "https://api.deepseek.com",
@@ -37,6 +38,7 @@ const rawEnvSchema = z.object({
   GEMINI_TTS_MODEL: z.string().optional(),
   GEMINI_TTS_AUDIOBOOK_MODEL: z.string().optional(),
   GEMINI_LIVE_MODEL: z.string().optional(),
+  GEMINI_LIVE_TRANSCRIBE_MODEL: z.string().optional(),
   GEMINI_TTS_VOICE: z.string().optional(),
   TEXT_AI_PROVIDER: z.enum(["gemini", "deepseek"]).optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
@@ -74,6 +76,7 @@ type ParsedEnv = {
   geminiTtsModel: string;
   geminiTtsAudiobookModel: string;
   geminiLiveModel: string;
+  geminiLiveTranscribeModel: string;
   geminiTtsVoice: string;
   textAiProvider: "gemini" | "deepseek";
   deepSeekApiKey?: string;
@@ -133,6 +136,8 @@ function readEnv(): ParsedEnv {
     geminiTtsAudiobookModel:
       normalizeOptionalString(parsed.GEMINI_TTS_AUDIOBOOK_MODEL) ?? DEFAULTS.geminiTtsAudiobookModel,
     geminiLiveModel: normalizeOptionalString(parsed.GEMINI_LIVE_MODEL) ?? DEFAULTS.geminiLiveModel,
+    geminiLiveTranscribeModel:
+      normalizeOptionalString(parsed.GEMINI_LIVE_TRANSCRIBE_MODEL) ?? DEFAULTS.geminiLiveTranscribeModel,
     geminiTtsVoice: normalizeOptionalString(parsed.GEMINI_TTS_VOICE) ?? DEFAULTS.geminiTtsVoice,
     textAiProvider: parsed.TEXT_AI_PROVIDER ?? DEFAULTS.textAiProvider,
     deepSeekApiKey: normalizeOptionalString(parsed.DEEPSEEK_API_KEY),
@@ -179,6 +184,7 @@ export function getAppConfig() {
     geminiTtsModel: env.geminiTtsModel,
     geminiTtsAudiobookModel: env.geminiTtsAudiobookModel,
     geminiLiveModel: env.geminiLiveModel,
+    geminiLiveTranscribeModel: env.geminiLiveTranscribeModel,
     textAiProvider: env.textAiProvider,
     deepSeekModel: env.deepSeekModel,
     maxParallelTranscriptions: env.maxParallelTranscriptions,

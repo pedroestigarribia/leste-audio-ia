@@ -18,6 +18,7 @@ export async function GET() {
     geminiTtsModel: config.geminiTtsModel,
     geminiAudiobookTtsModel: config.geminiTtsAudiobookModel,
     geminiLiveModel: config.geminiLiveModel,
+    geminiLiveTranscribeModel: config.geminiLiveTranscribeModel,
     textAiProvider: config.textAiProvider,
     deepseekModel: config.deepSeekModel,
     maxVideoUploadMb: config.maxVideoUploadMb,

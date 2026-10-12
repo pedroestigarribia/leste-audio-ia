@@ -35,6 +35,7 @@ type ResultPanelProps = {
   speechErrors: Partial<Record<GeneralResultKey, string>>;
   speechLoadingMap: Partial<Record<GeneralResultKey, boolean>>;
   onAnalyzeAll: () => void;
+  onChangeResult: (key: GeneralResultKey, value: string) => void;
   onCopyAll: () => void;
   onCopyAllTranscriptions: () => void;
   onCopyAnalysis: () => void;
@@ -112,6 +113,7 @@ function ResultSection({
   speechError,
   speechKey,
   speechLoading,
+  onChange,
 }: {
   title: string;
   value: string;
@@ -122,6 +124,7 @@ function ResultSection({
   speechError?: string;
   speechKey: GeneralResultKey;
   speechLoading?: boolean;
+  onChange: (value: string) => void;
 }) {
   return (
     <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
@@ -147,7 +150,7 @@ function ResultSection({
       </div>
       <textarea
         className="min-h-[200px] w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-800 outline-none focus:border-leste-blue"
-        readOnly
+        onChange={(event) => onChange(event.currentTarget.value)}
         value={value}
       />
       {speechError ? <ErrorBox message={speechError} /> : null}
@@ -191,7 +194,7 @@ function AudioPlaylist({
             key={item.id}
           >
             <p className="mb-3 line-clamp-2 text-sm font-semibold text-slate-800">{item.name}</p>
-            <audio className="w-full" controls preload="metadata" src={item.url}>
+            <audio className="w-full" controls preload="none" src={item.url}>
               Seu navegador não suporta reprodução de áudio.
             </audio>
           </div>
@@ -333,6 +336,7 @@ export default function ResultPanel({
   speechErrors,
   speechLoadingMap,
   onAnalyzeAll,
+  onChangeResult,
   onCopyAll,
   onCopyAllTranscriptions,
   onCopyAnalysis,
@@ -373,7 +377,7 @@ export default function ResultPanel({
     <section className="space-y-5 rounded-lg border border-blue-100 bg-white p-4 shadow-editorial sm:p-6">
       <div className="space-y-5">
         <div>
-          <h2 className="text-2xl font-black text-slate-950">Painel geral</h2>
+          <h2 className="text-2xl font-black text-slate-950">Entendimento geral da sessão</h2>
           <p className="mt-2 text-sm text-slate-600">
             Resuma, organize, interprete, extraia tarefas, mapeie dados-chave e gere resposta para
             WhatsApp a partir de todas as transcrições.
@@ -552,6 +556,7 @@ export default function ResultPanel({
           copied={copiedKey === "general-summary"}
           copyLabel="Copiar resumo geral"
           onCopy={onCopySummary}
+          onChange={(value) => onChangeResult("summary", value)}
           onSpeak={onSpeakResult}
           speechError={speechErrors.summary}
           speechKey="summary"
@@ -567,6 +572,7 @@ export default function ResultPanel({
           copied={copiedKey === "general-organized"}
           copyLabel="Copiar organização geral"
           onCopy={onCopyOrganized}
+          onChange={(value) => onChangeResult("organized", value)}
           onSpeak={onSpeakResult}
           speechError={speechErrors.organized}
           speechKey="organized"
@@ -582,6 +588,7 @@ export default function ResultPanel({
           copied={copiedKey === "general-analysis"}
           copyLabel="Copiar interpretação geral"
           onCopy={onCopyAnalysis}
+          onChange={(value) => onChangeResult("analysis", value)}
           onSpeak={onSpeakResult}
           speechError={speechErrors.analysis}
           speechKey="analysis"
@@ -597,6 +604,7 @@ export default function ResultPanel({
           copied={copiedKey === "general-tasks"}
           copyLabel="Copiar tarefas"
           onCopy={onCopyTasks}
+          onChange={(value) => onChangeResult("tasks", value)}
           onSpeak={onSpeakResult}
           speechError={speechErrors.tasks}
           speechKey="tasks"
@@ -612,6 +620,7 @@ export default function ResultPanel({
           copied={copiedKey === "general-keyData"}
           copyLabel="Copiar dados-chave"
           onCopy={onCopyKeyData}
+          onChange={(value) => onChangeResult("keyData", value)}
           onSpeak={onSpeakResult}
           speechError={speechErrors.keyData}
           speechKey="keyData"
@@ -627,6 +636,7 @@ export default function ResultPanel({
           copied={copiedKey === "general-reply"}
           copyLabel="Copiar resposta WhatsApp"
           onCopy={onCopyReply}
+          onChange={(value) => onChangeResult("reply", value)}
           onSpeak={onSpeakResult}
           speechError={speechErrors.reply}
           speechKey="reply"
@@ -642,6 +652,7 @@ export default function ResultPanel({
           copied={copiedKey === "general-intent"}
           copyLabel="Copiar intenção consolidada"
           onCopy={onCopyIntent}
+          onChange={(value) => onChangeResult("intent", value)}
           onSpeak={onSpeakResult}
           speechError={speechErrors.intent}
           speechKey="intent"

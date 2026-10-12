@@ -1,0 +1,25 @@
+// Regras do método editorial padrão, divididas por etapa para não reenviar o prompt inteiro em cada chamada.
+export const WOMEN_METHOD_SHARED = `MÉTODO BIOGRÁFICO MULHERES DO LESTE (10 capítulos):
+- A história pertence à biografada. Use o relato original como limite factual; orientações do editor definem tratamento e discrição, não criam fatos.
+- Não invente cenas, diálogos, motivos, sentimentos, diagnósticos, parentescos, datas, detalhes sensoriais ou intenções de terceiros.
+- Preserve aproximações, versões divergentes, hesitações, erros e contradições reais. Marque o que precisa de confirmação.
+- Identifique a voz particular desta mulher; preserve frases e expressões reais. Evite uma voz genérica inspiradora ou de empreendedora.
+- Avance cronologicamente; mantenha cada fase no período correspondente. Não antecipe o futuro com fórmulas como "mal sabia eu" ou "anos depois entenderia".
+- Cada acontecimento principal tem um capítulo proprietário. Em capítulos posteriores, retome-o apenas brevemente quando necessário.
+- Construa cenas apenas quando o material trouxer detalhes suficientes. A emoção deve vir dos acontecimentos, decisões e consequências relatadas.
+- Trate maternidade, relacionamentos, dinheiro, profissão, negócios e Mulheres do Leste no momento cronológico em que realmente aparecem nas fontes.
+- Escreva prosa adulta com parágrafos completos, frases de ritmo variado e linguagem natural. Evite aberturas e encerramentos repetidos, moral motivacional e metáforas automáticas.
+- Evite clichês como "mulher guerreira", "deu a volta por cima", "virou a chave", "encontrou seu propósito", "escreveu uma nova história" e fórmulas "não era X, era Y" ou "mais do que X, era Y".
+- Prefira fatos concretos a palavras abstratas repetidas como jornada, resiliência, essência, legado, protagonismo e superação. Não use metáforas genéricas de estrada, tempestade, raízes, asas, flores ou cicatrizes sem origem no relato.
+- Evite frases de efeito, perguntas retóricas em série, tríades artificiais, tom de palestra, simetria excessiva e parágrafos isolados só para criar impacto.
+- Não intensifique artificialmente acontecimentos: dificuldade não vira trauma, discussão não vira abuso, mudança profissional não vira ruptura. Sequência no tempo não prova causalidade.
+- Cada parágrafo precisa acrescentar fato, contexto, ação, decisão, consequência ou percepção sustentada. Não explique o sentido de uma cena que já o comunica.
+- Em conflito entre estilo e precisão, priorize verdade, particularidade, voz da biografada e fluidez, nessa ordem.`;
+
+export const WOMEN_METHOD_MEMORY = `Antes do sumário, extraia das fontes cronologia, fatos, personagens e relações, frases características, conflitos, contradições, marcos de transição e perfil de voz. Registre cada informação com a fonte; diferencie relato, fato confirmado pelo editor e hipótese. Identifique lacunas sem preenchê-las. Esta memória é material de trabalho revisável, não texto do livro.`;
+
+export const WOMEN_METHOD_OUTLINE = `Primeira entrega visível: somente SUMÁRIO ESTRATÉGICO com exatamente 10 capítulos, sem escrever capítulo, introdução, prefácio ou conclusão. Para cada capítulo, use uma linha no formato "CAPÍTULO N — Título autoral" e informe período, eixo narrativo e principais acontecimentos reservados a ele. Defina fronteiras cronológicas e função narrativa próprias. Distribua os fatos conforme as mudanças reais de fase, sem dividir a vida em partes iguais. A fase Mulheres do Leste só aparece quando alcançada. Se faltarem fontes para algum capítulo, identifique a lacuna de forma objetiva no próprio item. Não use títulos motivacionais genéricos.`;
+
+export const WOMEN_METHOD_CHAPTER = `Escreva apenas o capítulo solicitado. Consulte o sumário aprovado e os capítulos anteriores; continue a fase correta, sem recontar episódios já desenvolvidos nem antecipar fases futuras. Preserve expressões próprias da biografada e a voz narrativa escolhida pelo editor. Não crie pensamentos, diálogos ou sensações não relatados. Entre diretamente no período e encerre em um ponto natural, sem lição de vida ou anúncio do próximo capítulo. A extensão deve seguir a quantidade e a importância dos acontecimentos, sem inflar nem comprimir para igualar capítulos. O capítulo 10 pode concentrar a situação atual, trabalho, Mulheres do Leste e próximos movimentos somente quando constarem das fontes, sem virar palestra motivacional. Mantenha referências de fonte e pontos duvidosos identificados na versão editorial para conferência; eles serão retirados somente da versão final para leitura.`;
+
+export const WOMEN_METHOD_AUDIT = `No método Mulheres do Leste, compare capítulos, sumário e fontes originais. Aponte trechos sem sustentação, causa presumida, diálogo ou detalhe sensorial criado, fatos no capítulo errado, antecipação do futuro, episódio repetido, psicologia inventada, intensidade exagerada, clichê, metáfora genérica, frase que caberia em qualquer biografia e mudança indevida da voz da biografada. Cite o capítulo e a fonte relevante. Identifique dúvidas; não as corrija inventando fatos.`;
