@@ -267,7 +267,7 @@ O ZIP é salvo em `Downloads` com data e hora no nome. Ele exclui `node_modules`
 
 Também é possível executar `iniciar-leste-audio-ia.cmd` diretamente. Ele instala dependências se necessário, verifica a página e abre o navegador em uma porta livre entre `3000` e `3010`.
 
-`npm install` instala `ffmpeg-static` e `@derhuerst/ffprobe-static`; o app também aceita os binários do sistema via `FFMPEG_BIN` e `FFPROBE_BIN`. A transcrição por link do Instagram/YouTube usa o `yt-dlp` empacotado por `youtube-dl-exec`; a instalação dessa dependência requer Python 3.9 ou superior conforme o projeto upstream. `YTDLP_BIN` pode apontar para um binário compatível instalado no sistema. Para `Cortes Inteligentes`, mantenha `yt-dlp` disponível no servidor, pois esse fluxo também pode usar o executável do sistema. O upload local não depende das plataformas.
+`npm install` instala `ffmpeg-static` e `@derhuerst/ffprobe-static`; o app também aceita os binários do sistema via `FFMPEG_BIN` e `FFPROBE_BIN`. A transcrição por link do Instagram/YouTube usa o `yt-dlp` empacotado por `youtube-dl-exec`. O instalador normalmente verifica Python; em Linux sem Python, configure `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux` para baixar o executável autossuficiente oficial. Não use `YOUTUBE_DL_FILENAME=yt-dlp_linux` no Windows. `YTDLP_BIN` pode apontar para um binário compatível instalado no sistema. Para `Cortes Inteligentes`, mantenha `yt-dlp` disponível no servidor, pois esse fluxo também pode usar o executável do sistema. O upload local não depende das plataformas.
 
 ### Diretórios de build separados
 
@@ -687,7 +687,7 @@ Além da lista principal pedida, o projeto usa:
 
 - `docx`: para gerar download `.docx` no frontend sem reenviar o conteúdo ao backend.
 - `@breezystack/lamejs`: para gerar MP3 da voz da Milena em memória, sem depender de arquivos temporários ou FFmpeg nessa etapa.
-- `youtube-dl-exec`: wrapper Node.js do projeto `microlinkhq/youtube-dl-exec` para executar `yt-dlp` no servidor na aquisição temporária de áudio a partir de links. O instalador upstream baixa o binário e exige Python 3.9+; veja as limitações de acesso das plataformas acima.
+- `youtube-dl-exec`: wrapper Node.js do projeto `microlinkhq/youtube-dl-exec` para executar `yt-dlp` no servidor na aquisição temporária de áudio a partir de links. O instalador upstream baixa o binário; em Linux sem Python, use as variáveis `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux`. Veja as limitações de acesso das plataformas acima.
 - `@derhuerst/ffprobe-static`: fornece FFprobe em Windows, Linux e macOS para confirmar duração e presença de áudio em vídeos sem exigir instalação manual.
 - `execa`: para executar `ffmpeg-static` ou `ffmpeg` do sistema com menos acoplamento.
 - `pdf-parse`: para extrair texto pesquisável de PDFs no backend.
@@ -758,7 +758,7 @@ Checklist de deploy via GitHub:
    - `TEMP_UPLOAD_DIR`
 11. Configure o domínio `lesteaudio.space` para apontar para o projeto publicado.
 12. Verifique se o ambiente executa os binários empacotados `ffmpeg-static` e `@derhuerst/ffprobe-static`. Configure `FFPROBE_BIN` se preferir o FFprobe do sistema.
-13. Garanta Python 3.9+ durante `npm install`, exigido pelo instalador de `youtube-dl-exec`; configure `YTDLP_BIN` se for usar um binário do sistema.
+13. Na hospedagem Linux sem Python, configure `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux` nas variáveis de ambiente antes do build. O segundo valor seleciona o executável Linux oficial, que não depende de Python instalado. Não aplique essa configuração ao Windows. Se usar um binário próprio, configure `YTDLP_BIN`.
 14. Se FFmpeg/FFprobe/yt-dlp falharem na Hostinger, use um VPS/plano com esses binários ou mantenha o fluxo por upload de MP4. Links de Instagram/YouTube podem falhar por restrições externas mesmo com o binário instalado.
 15. Garanta que `TEMP_UPLOAD_DIR` aponta para uma pasta gravável, por exemplo `./tmp/uploads`, e não para um arquivo existente. Se aparecer erro `EEXIST`, limpe a pasta temporária e reinicie o app Node.js.
 

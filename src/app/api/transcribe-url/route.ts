@@ -60,13 +60,9 @@ function errorResponse(error: string, status: number) {
 function getDownloader() {
   const env = getServerEnv();
   const configuredPath = env.ytDlpBin;
-  const bundledName = process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp";
-  const bundledPath = path.join(process.cwd(), "node_modules", "youtube-dl-exec", "bin", bundledName);
-  const binaryPath = configuredPath && configuredPath !== "yt-dlp"
-    ? path.resolve(process.cwd(), configuredPath)
-    : bundledPath;
-
-  return youtubeDl.create(binaryPath);
+  return configuredPath && configuredPath !== "yt-dlp"
+    ? youtubeDl.create(path.resolve(process.cwd(), configuredPath))
+    : youtubeDl;
 }
 
 function getSafeTitle(title: string | undefined, sourceId: string) {
