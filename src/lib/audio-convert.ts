@@ -3,13 +3,12 @@ import "server-only";
 import { existsSync } from "fs";
 import path from "path";
 
-import { execa } from "execa";
 import ffmpegStatic from "ffmpeg-static";
 
+import { runCommand } from "@/lib/run-command";
+
 async function runFfmpeg(binaryPath: string, args: string[]) {
-  await execa(binaryPath, args, {
-    windowsHide: true,
-  });
+  await runCommand(binaryPath, args);
 }
 
 function getStaticFfmpegCandidates() {

@@ -3,10 +3,10 @@ import "server-only";
 import { promises as fs } from "fs";
 import path from "path";
 
-import { execa } from "execa";
 import ffmpegStatic from "ffmpeg-static";
 import ytdl from "@distube/ytdl-core";
 
+import { runCommand } from "@/lib/run-command";
 import { ensureTempDir, sanitizeFileName } from "@/lib/temp-files";
 import { buildYoutubeWatchUrl } from "@/lib/youtube";
 
@@ -40,7 +40,7 @@ async function runFfmpegWithFallback(args: string[]): Promise<void> {
 
   for (const candidate of getStaticFfmpegCandidates()) {
     try {
-      await execa(candidate, args, { windowsHide: true });
+      await runCommand(candidate, args);
       return;
     } catch (error) {
       failures.push(error instanceof Error ? error.message : "Falha no ffmpeg-static.");
@@ -48,7 +48,7 @@ async function runFfmpegWithFallback(args: string[]): Promise<void> {
   }
 
   try {
-    await execa("ffmpeg", args, { windowsHide: true });
+    await runCommand("ffmpeg", args);
     return;
   } catch (error) {
     failures.push(error instanceof Error ? error.message : "Falha no FFmpeg do sistema.");

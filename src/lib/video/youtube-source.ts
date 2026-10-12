@@ -3,11 +3,11 @@ import "server-only";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import { execa } from "execa";
 import { nanoid } from "nanoid";
 import ytdl from "@distube/ytdl-core";
 
 import { getServerEnv } from "@/lib/env";
+import { runCommand } from "@/lib/run-command";
 import { extractYoutubeVideoId, fetchYoutubeOEmbed, buildYoutubeThumbnail } from "@/lib/youtube";
 import { getJobDir } from "@/lib/video/paths";
 import { runFfmpeg } from "@/lib/video/tools";
@@ -53,9 +53,7 @@ type YoutubeDump = {
 
 async function getYtDlpInfo(videoUrl: string) {
   const env = getServerEnv();
-  const result = await execa(env.ytDlpBin, ["--dump-single-json", "--no-playlist", "--no-warnings", videoUrl], {
-    shell: false,
-    windowsHide: true,
+  const result = await runCommand(env.ytDlpBin, ["--dump-single-json", "--no-playlist", "--no-warnings", videoUrl], {
     timeout: env.processTimeoutMs,
   });
   const info = JSON.parse(result.stdout) as YoutubeDump;
@@ -69,7 +67,7 @@ async function getYtDlpInfo(videoUrl: string) {
 
 async function downloadWithYtDlp(videoUrl: string, outputPath: string) {
   const env = getServerEnv();
-  await execa(
+  await runCommand(
     env.ytDlpBin,
     [
       "--no-playlist",
@@ -84,8 +82,6 @@ async function downloadWithYtDlp(videoUrl: string, outputPath: string) {
       videoUrl,
     ],
     {
-      shell: false,
-      windowsHide: true,
       timeout: env.processTimeoutMs,
     },
   );

@@ -689,7 +689,7 @@ Além da lista principal pedida, o projeto usa:
 - `@breezystack/lamejs`: para gerar MP3 da voz da Milena em memória, sem depender de arquivos temporários ou FFmpeg nessa etapa.
 - `youtube-dl-exec`: usado para instalar o binário `yt-dlp`; a rota de links executa o binário com `child_process.execFile` para evitar a incompatibilidade de `stdin` do wrapper no runtime da Hostinger. Em Linux sem Python, use `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux`. Veja as limitações de acesso das plataformas acima.
 - `@derhuerst/ffprobe-static`: fornece FFprobe em Windows, Linux e macOS para confirmar duração e presença de áudio em vídeos sem exigir instalação manual.
-- `execa`: para executar `ffmpeg-static` ou `ffmpeg` do sistema com menos acoplamento.
+- Os executáveis FFmpeg, FFprobe e yt-dlp são chamados com `child_process.execFile` do Node.js, sem shell nem dependência de `stdin` do servidor.
 - `pdf-parse`: para extrair texto pesquisável de PDFs no backend.
 - `mammoth`: para extrair o texto de arquivos DOCX no backend, sem armazenar o documento.
 - `@types/node`, `@types/react`, `@types/react-dom`: suporte de tipagem para TypeScript.

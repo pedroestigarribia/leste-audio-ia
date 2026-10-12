@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
 import { z } from "zod";
 
 import { convertToWav } from "@/lib/audio-convert";
@@ -14,6 +12,7 @@ import {
   requireGeminiApiKey,
 } from "@/lib/env";
 import { ensureTempDir } from "@/lib/temp-files";
+import { runCommand } from "@/lib/run-command";
 import { InvalidVideoSourceUrlError, validatePublicVideoUrl } from "@/lib/video/source-url";
 import { runFfprobe } from "@/lib/video/tools";
 import type { TranscriptionResponse } from "@/types/audio";
@@ -23,7 +22,6 @@ export const dynamic = "force-dynamic";
 
 const requestSchema = z.object({ url: z.string().trim().min(1).max(2048) });
 const deniedAvailability = new Set(["private", "needs_auth", "subscriber_only", "premium_only"]);
-const execFileAsync = promisify(execFile);
 
 type DownloaderMetadata = {
   title?: string;
@@ -70,10 +68,9 @@ function getDownloaderBinary() {
 }
 
 async function runDownloader(args: string[], signal: AbortSignal, timeout: number) {
-  const { stdout } = await execFileAsync(getDownloaderBinary(), args, {
+  const { stdout } = await runCommand(getDownloaderBinary(), args, {
     signal,
     timeout,
-    windowsHide: true,
     maxBuffer: 16 * 1024 * 1024,
   });
   return stdout;

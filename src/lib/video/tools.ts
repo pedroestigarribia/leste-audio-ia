@@ -1,11 +1,11 @@
 import "server-only";
 
-import { execa } from "execa";
 import ffmpegStatic from "ffmpeg-static";
 import ffprobeStatic from "@derhuerst/ffprobe-static";
 import path from "node:path";
 
 import { getServerEnv } from "@/lib/env";
+import { runCommand } from "@/lib/run-command";
 
 function unique(values: Array<string | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value))));
@@ -36,9 +36,8 @@ export async function runFfmpeg(args: string[], signal?: AbortSignal) {
 
   for (const executable of getFfmpegCandidates()) {
     try {
-      await execa(executable, args, {
-        windowsHide: true,
-        cancelSignal: signal,
+      await runCommand(executable, args, {
+        signal,
         timeout: getServerEnv().processTimeoutMs,
       });
       return;
@@ -58,9 +57,8 @@ export async function runFfmpegWithOutput(args: string[], signal?: AbortSignal) 
 
   for (const executable of getFfmpegCandidates()) {
     try {
-      return await execa(executable, args, {
-        windowsHide: true,
-        cancelSignal: signal,
+      return await runCommand(executable, args, {
+        signal,
         timeout: getServerEnv().processTimeoutMs,
       });
     } catch (error) {
@@ -77,9 +75,8 @@ export async function runFfprobe(args: string[], signal?: AbortSignal) {
 
   for (const executable of getFfprobeCandidates()) {
     try {
-      const result = await execa(executable, args, {
-        windowsHide: true,
-        cancelSignal: signal,
+      const result = await runCommand(executable, args, {
+        signal,
         timeout: getServerEnv().processTimeoutMs,
       });
       return result.stdout;
