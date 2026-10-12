@@ -79,8 +79,11 @@ function getDownloaderMessage(error: unknown) {
   if (/login|sign in|cookies|private|authentication|not available for registered/i.test(raw)) {
     return "O Instagram ou YouTube exigiu login ou restringiu este vídeo. Envie o arquivo MP4 para transcrever.";
   }
-  const firstLine = raw.split(/\r?\n/, 1)[0].slice(0, 220);
-  return `Não foi possível obter este vídeo sem login. O link pode exigir acesso, ter restrições ou a plataforma pode ter alterado a extração. Detalhe: ${firstLine}`;
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const detail = lines.find((line) => /^(ERROR|FATAL|Traceback|\[PYI-)/i.test(line))
+    ?? lines.filter((line) => !line.startsWith("Command failed:")).at(-1)
+    ?? "O yt-dlp não conseguiu processar este link.";
+  return `Não foi possível obter este vídeo. O link pode ter restrições ou a plataforma pode ter alterado a extração. Detalhe: ${detail.slice(0, 220)}`;
 }
 
 export async function POST(request: Request) {
