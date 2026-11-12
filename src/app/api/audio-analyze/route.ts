@@ -19,6 +19,13 @@ export async function POST(request: Request) {
   const filesToCleanup: string[] = [];
 
   try {
+    if (getServerEnv().audioAiProvider === "openai") {
+      return NextResponse.json(
+        { ok: false, error: "Com OpenAI, a análise usa a transcrição já gerada e o provedor textual selecionado." },
+        { status: 409 },
+      );
+    }
+
     const file = await parseMultipartFile(request);
 
     if (!file) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { MissingApiKeyError, getDeepSeekMissingKeyMessage } from "@/lib/env";
+import { MissingApiKeyError, getTextAIMissingKeyMessage } from "@/lib/env";
 import { normalizePlainText } from "@/lib/plain-text";
 import { runTextTask } from "@/lib/text-ai";
 import { buildAskFilesPrompt } from "@/prompts/askFiles";
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     const result = await runTextTask({ system, prompt, temperature: 0.1 });
     return NextResponse.json({ ok: true, result: parseAnswer(result, parsed.data.sources) });
   } catch (error) {
-    const message = error instanceof MissingApiKeyError ? getDeepSeekMissingKeyMessage() : error instanceof Error ? error.message : "Falha ao responder sobre os arquivos.";
+    const message = error instanceof MissingApiKeyError ? getTextAIMissingKeyMessage() : error instanceof Error ? error.message : "Falha ao responder sobre os arquivos.";
     return NextResponse.json({ ok: false, error: message }, { status: 502 });
   }
 }

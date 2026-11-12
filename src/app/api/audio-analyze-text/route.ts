@@ -4,9 +4,7 @@ import { z } from "zod";
 import { analyzeTranscriptionWithTextAi } from "@/lib/audio-intelligence";
 import {
   MissingApiKeyError,
-  getDeepSeekMissingKeyMessage,
-  getGeminiMissingKeyMessage,
-  getServerEnv,
+  getTextAIMissingKeyMessage,
 } from "@/lib/env";
 import { getTextAiModel } from "@/lib/text-ai";
 
@@ -16,12 +14,6 @@ export const dynamic = "force-dynamic";
 const requestSchema = z.object({
   text: z.string().trim().min(1, "Envie uma transcrição para interpretar."),
 });
-
-function getMissingKeyMessage() {
-  return getServerEnv().textAiProvider === "deepseek"
-    ? getDeepSeekMissingKeyMessage()
-    : getGeminiMissingKeyMessage();
-}
 
 export async function POST(request: Request) {
   try {
@@ -44,7 +36,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof MissingApiKeyError
-        ? getMissingKeyMessage()
+        ? getTextAIMissingKeyMessage()
         : error instanceof Error
           ? error.message
           : "Não foi possível interpretar a transcrição.";

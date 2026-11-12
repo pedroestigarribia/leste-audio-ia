@@ -229,7 +229,13 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vocabulary: customVocabulary.split(/[,;\n]/).map((term) => term.trim()).filter(Boolean).slice(0, 50) }),
       });
-      const payload = await response.json() as { ok: boolean; token?: string; model?: string; config?: object; error?: string };
+      const payload = await response.json() as { ok: boolean; token?: string; model?: string; config?: object; provider?: string; uploadOnly?: boolean; error?: string };
+      if (response.ok && payload.ok && payload.provider === "openai" && payload.uploadOnly) {
+        failureRef.current = true;
+        setStatus("fallback");
+        setNotice("Gravação ativa. A OpenAI transcreverá o áudio quando você parar e enviar a gravação.");
+        return;
+      }
       if (!response.ok || !payload.ok || !payload.token || !payload.model || !payload.config) {
         throw new Error(payload.error || "Escuta ao vivo indisponível.");
       }

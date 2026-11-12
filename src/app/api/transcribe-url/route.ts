@@ -7,9 +7,11 @@ import { convertToWav } from "@/lib/audio-convert";
 import { getFileExtension, getMimeTypeFromExtension, isAllowedAudio, shouldConvert } from "@/lib/audio";
 import {
   getGeminiMissingKeyMessage,
+  getOpenAIMissingKeyMessage,
   getServerEnv,
   MissingApiKeyError,
   requireGeminiApiKey,
+  requireOpenAIApiKey,
 } from "@/lib/env";
 import { ensureTempDir } from "@/lib/temp-files";
 import { InvalidVideoSourceUrlError, type PublicVideoSource, validatePublicVideoUrl } from "@/lib/video/source-url";
@@ -114,7 +116,8 @@ export async function POST(request: Request) {
     const source = validatePublicVideoUrl(body.url);
     const env = getServerEnv();
 
-    requireGeminiApiKey();
+    if (env.audioAiProvider === "openai") requireOpenAIApiKey();
+    else requireGeminiApiKey();
 
     const tempRoot = await ensureTempDir();
     workDir = await fs.mkdtemp(path.join(tempRoot, "public-video-"));
@@ -133,7 +136,7 @@ export async function POST(request: Request) {
       ], request.signal, env.processTimeoutMs);
       metadata = JSON.parse(result) as DownloaderMetadata;
     } catch (error) {
-      if (source.platform === "youtube" && !request.signal.aborted) {
+      if (env.audioAiProvider === "gemini" && source.platform === "youtube" && !request.signal.aborted) {
         return await transcribeYoutubeFallback(source, error);
       }
       throw new Error(getDownloaderMessage(error));
@@ -167,7 +170,7 @@ export async function POST(request: Request) {
         source.url,
       ], request.signal, env.processTimeoutMs);
     } catch (error) {
-      if (source.platform === "youtube" && !request.signal.aborted) {
+      if (env.audioAiProvider === "gemini" && source.platform === "youtube" && !request.signal.aborted) {
         return await transcribeYoutubeFallback(source, error);
       }
       throw new Error(getDownloaderMessage(error));
@@ -202,28 +205,35 @@ export async function POST(request: Request) {
 
     const originalName = `${getSafeTitle(metadata.title, source.id)}.${extension}`;
     const originalMime = getMimeTypeFromExtension(extension);
-    const { transcribeAudioWithGemini } = await import("@/lib/gemini");
     let transcription = "";
     let converted = false;
 
-    try {
-      transcription = await transcribeAudioWithGemini({
-        filePath,
-        mimeType: originalMime,
-        originalName,
-      });
-    } catch (error) {
-      if (!shouldConvert(extension) || error instanceof MissingApiKeyError) {
-        throw error;
-      }
+    if (env.audioAiProvider === "openai") {
+      const { transcribeAudioWithOpenAI } = await import("@/lib/openai-audio");
+      const result = await transcribeAudioWithOpenAI({ filePath });
+      transcription = result.transcription;
+      converted = result.converted;
+    } else {
+      const { transcribeAudioWithGemini } = await import("@/lib/gemini");
+      try {
+        transcription = await transcribeAudioWithGemini({
+          filePath,
+          mimeType: originalMime,
+          originalName,
+        });
+      } catch (error) {
+        if (!shouldConvert(extension) || error instanceof MissingApiKeyError) {
+          throw error;
+        }
 
-      const wavPath = await convertToWav(filePath);
-      converted = true;
-      transcription = await transcribeAudioWithGemini({
-        filePath: wavPath,
-        mimeType: "audio/wav",
-        originalName: `${getSafeTitle(metadata.title, source.id)}.wav`,
-      });
+        const wavPath = await convertToWav(filePath);
+        converted = true;
+        transcription = await transcribeAudioWithGemini({
+          filePath: wavPath,
+          mimeType: "audio/wav",
+          originalName: `${getSafeTitle(metadata.title, source.id)}.wav`,
+        });
+      }
     }
 
     return NextResponse.json<TranscriptionResponse>({
@@ -232,7 +242,7 @@ export async function POST(request: Request) {
       meta: {
         originalFileName: `${getSafeTitle(metadata.title, source.id)}.mp4`,
         converted,
-        model: env.geminiTranscribeModel,
+        model: env.audioAiProvider === "openai" ? env.openAiTranscribeModel : env.geminiTranscribeModel,
         sourceUrl: source.url,
         sourcePlatform: source.platform,
         sourceSizeBytes: fileStats.size,
@@ -247,7 +257,10 @@ export async function POST(request: Request) {
       return errorResponse(error.message, 400);
     }
     if (error instanceof MissingApiKeyError) {
-      return errorResponse(getGeminiMissingKeyMessage(), 500);
+      return errorResponse(
+        getServerEnv().audioAiProvider === "openai" ? getOpenAIMissingKeyMessage() : getGeminiMissingKeyMessage(),
+        500,
+      );
     }
 
     return errorResponse(

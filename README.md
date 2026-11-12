@@ -13,10 +13,10 @@ Rodar primeiro em `localhost`, processar múltiplos áudios enviados manualmente
 - Tailwind CSS
 - Route Handlers do Next.js
 - Node.js runtime
-- Gemini API para transcrição
-- Gemini API para transcrição, resumo, organização e análise geral
-- DeepSeek API opcional para processamento textual alternativo
-- Gemini API para leitura com voz da Milena e geração de texto a partir de imagem
+- Gemini e OpenAI configuráveis para transcrição de áudio
+- Gemini, OpenAI e DeepSeek configuráveis para processamento de texto
+- Gemini e OpenAI Realtime configuráveis para leitura com voz da Milena
+- Gemini para entendimento multimodal direto de áudio/imagem quando esse provedor estiver selecionado
 - `ffmpeg-static` com fallback para FFmpeg do sistema
 - IndexedDB nativo do navegador para projetos locais explicitamente salvos, sem persistir mídia original
 - `fflate` para empacotar capítulos MP3 e roteiro em ZIP, sem enviar os áudios gerados ao servidor
@@ -126,11 +126,19 @@ GEMINI_TTS_AUDIOBOOK_MODEL=gemini-2.5-pro-preview-tts
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
 GEMINI_LIVE_TRANSCRIBE_MODEL=gemini-3.5-transcribe-live
 GEMINI_TTS_VOICE=Kore
-TEXT_AI_PROVIDER=gemini
+TEXT_AI_PROVIDER=openai
 
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-pro
+
+OPENAI_API_KEY=
+OPENAI_TEXT_MODEL=gpt-6-luna
+OPENAI_TRANSCRIBE_MODEL=gpt-transcribe
+OPENAI_REALTIME_TTS_MODEL=gpt-realtime-2.1-mini
+OPENAI_TTS_VOICE=marin
+AUDIO_AI_PROVIDER=openai
+SPEECH_AI_PROVIDER=openai
 
 MAX_PARALLEL_TRANSCRIPTIONS=3
 MAX_FILE_SIZE_MB=125
@@ -149,15 +157,18 @@ TEMP_UPLOAD_DIR=./tmp/uploads
 APP_NAME=Leste Audio IA
 ```
 
-Se faltar `GEMINI_API_KEY`, as rotas de transcrição e leitura em voz retornam erro claro.
+Os provedores de áudio e texto são independentes. `AUDIO_AI_PROVIDER` escolhe a transcrição, `SPEECH_AI_PROVIDER` escolhe a voz e `TEXT_AI_PROVIDER` escolhe resumo, organização e interpretação. Cada fluxo usa somente o provedor selecionado; uma falha não envia o mesmo conteúdo automaticamente a outro serviço.
 
 Se `TEXT_AI_PROVIDER=deepseek`, as rotas de texto usam a DeepSeek e exigem
-`DEEPSEEK_API_KEY`. O padrão é `TEXT_AI_PROVIDER=gemini`, que usa somente
-`GEMINI_API_KEY` para as tarefas textuais.
+`DEEPSEEK_API_KEY`. Com `TEXT_AI_PROVIDER=gemini`, usam somente
+`GEMINI_API_KEY`; com `TEXT_AI_PROVIDER=openai`, usam somente `OPENAI_API_KEY`.
+Transcrição OpenAI e voz OpenAI também exigem `OPENAI_API_KEY`.
 
 A interface não cai por causa disso. Ela mostra a mensagem:
 
 `Configure a chave da API no arquivo .env.local`
+
+Para OpenAI, a mensagem identifica a variável ausente: `Configure OPENAI_API_KEY no arquivo .env.local`.
 
 ## Como obter e configurar a Gemini API key
 
@@ -179,6 +190,20 @@ A interface não cai por causa disso. Ela mostra a mensagem:
    - `DEEPSEEK_BASE_URL=https://api.deepseek.com`
    - `DEEPSEEK_MODEL=deepseek-v4-pro`
 
+## Como configurar a OpenAI API
+
+1. Crie uma chave de projeto pela página oficial da OpenAI Platform e mantenha-a somente no servidor.
+2. Preencha `OPENAI_API_KEY` no `.env.local` (localhost) ou no gerenciador de variáveis da hospedagem. Nunca use prefixo `NEXT_PUBLIC_`.
+3. Para usar OpenAI nos fluxos correspondentes, configure `AUDIO_AI_PROVIDER=openai`, `SPEECH_AI_PROVIDER=openai` e `TEXT_AI_PROVIDER=openai`. As chaves Gemini e DeepSeek continuam disponíveis ao selecionar seus respectivos provedores.
+4. Modelos padrão: `OPENAI_TRANSCRIBE_MODEL=gpt-transcribe`, `OPENAI_REALTIME_TTS_MODEL=gpt-realtime-2.1-mini` e `OPENAI_TEXT_MODEL=gpt-6-luna`. São substituíveis por ambiente.
+5. O endpoint de transcrição recebe áudio já gravado. O servidor converte a faixa para MP3 mono de 16 kHz e divide em partes sequenciais de 10 minutos, envia todas as partes e reúne o texto na ordem. Isso atende ao limite oficial de 25 MB por arquivo da API, sem truncar o restante do áudio.
+6. A gravação de microfone com OpenAI não mostra texto parcial ao vivo: ela grava no navegador e só envia o arquivo para transcrição depois que o usuário para. A escuta/transcrição em tempo real existente permanece disponível quando Gemini está selecionado.
+7. Para links do YouTube/Instagram, o app continua usando o extrator já existente para obter a mídia temporária. OpenAI não baixa esses vídeos; se a extração falhar, envie o arquivo manualmente.
+8. A voz predefinida `marin` é chamada de “Milena” na interface, mas não é clonagem nem uma voz personalizada. A OpenAI informa que as vozes são otimizadas para inglês, embora aceitem português; confira a pronúncia em português brasileiro. A interface deve deixar claro que a voz é gerada por IA.
+9. Áudio e texto são enviados ao provedor selecionado para processamento. O app remove os arquivos temporários locais após a tarefa; os dados enviados ficam sujeitos aos controles e à política de dados da conta API do provedor.
+
+Referências oficiais: [transcrição de arquivos](https://developers.openai.com/api/docs/guides/speech-to-text), [seleção de fluxo de transcrição](https://developers.openai.com/api/docs/guides/transcription), [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [migração de TTS para Realtime](https://developers.openai.com/api/docs/guides/text-to-speech) e [Realtime WebSocket](https://developers.openai.com/api/docs/guides/realtime-conversations).
+
 ## Modelos usados
 
 - `GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe` para transcrição dedicada
@@ -190,6 +215,10 @@ A interface não cai por causa disso. Ela mostra a mensagem:
 - `GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview` para futura conversação em tempo real
 - `GEMINI_LIVE_TRANSCRIBE_MODEL=gemini-3.5-transcribe-live` para transcrição ao vivo, independente da configuração de conversação
 - `TEXT_AI_PROVIDER=gemini` para deixar Gemini como provedor textual padrão
+- `OPENAI_TRANSCRIBE_MODEL=gpt-transcribe` para áudio gravado
+- `OPENAI_REALTIME_TTS_MODEL=gpt-realtime-2.1-mini` para geração de fala por Realtime
+- `OPENAI_TEXT_MODEL=gpt-6-luna` para as tarefas de texto
+- `AUDIO_AI_PROVIDER`, `SPEECH_AI_PROVIDER` e `TEXT_AI_PROVIDER` para selecionar provedores sem fallback cruzado
 - `DEEPSEEK_MODEL=deepseek-v4-pro`
 
 Os identificadores acima seguem a documentação atual do Gemini. A rota de
@@ -513,14 +542,14 @@ Entrada:
 }
 ```
 
-Retorna áudio para a leitura com voz da Milena. O app entrega `audio/mpeg` em MP3. Se a conversão para MP3 falhar, a rota retorna erro claro em vez de baixar WAV. O estilo `audiolivro` seleciona automaticamente `GEMINI_TTS_AUDIOBOOK_MODEL`.
+Retorna áudio para a leitura com voz da Milena. O app entrega `audio/mpeg` em MP3 ou WAV, conforme pedido. `SPEECH_AI_PROVIDER=gemini` usa os modelos Gemini configurados; `SPEECH_AI_PROVIDER=openai` usa `OPENAI_REALTIME_TTS_MODEL` e converte o PCM 24 kHz retornado para MP3/WAV. Textos longos continuam divididos em partes e capítulos podem ser retomados pelo fluxo de audiolivro.
 
 Observações:
 
 - A rota aceita textos de até 24.000 caracteres.
 - Textos longos de PDF, resumo geral, organização geral, texto livre e imagem são divididos em blocos menores.
 - Os blocos de voz são reunidos e convertidos em um único MP3 para download.
-- A conversão usa `ffmpeg-static` ou `ffmpeg` do sistema.
+- A conversão de voz gerada pela OpenAI usa PCM para MP3/WAV; a conversão de áudio de entrada usa `ffmpeg-static` ou `ffmpeg` do sistema.
 
 ### `POST /api/image-extract`
 
@@ -743,6 +772,14 @@ Checklist de deploy via GitHub:
    - `GEMINI_LIVE_TRANSCRIBE_MODEL`
    - `GEMINI_TTS_MODEL`
    - `GEMINI_TTS_VOICE`
+   - `OPENAI_API_KEY`
+   - `OPENAI_TEXT_MODEL`
+   - `OPENAI_TRANSCRIBE_MODEL`
+   - `OPENAI_REALTIME_TTS_MODEL`
+   - `OPENAI_TTS_VOICE`
+   - `AUDIO_AI_PROVIDER`
+   - `SPEECH_AI_PROVIDER`
+   - `TEXT_AI_PROVIDER`
    - `DEEPSEEK_API_KEY`
    - `DEEPSEEK_BASE_URL`
    - `DEEPSEEK_MODEL`
@@ -812,14 +849,14 @@ O projeto tambem inclui protecoes contra esse caso:
 - Não integra diretamente com WhatsApp.
 - O usuário precisa baixar ou encaminhar os áudios e subir no app.
 - Não salva histórico em servidor ou banco. Projetos nomeados podem ser salvos manualmente neste navegador, sem arquivos originais.
-- Não divide o arquivo de áudio em segmentos de áudio automaticamente. As transcrições extensas, porém, são divididas em blocos numerados para resumo e análise textual, sem remover caracteres da transcrição original.
+- O caminho Gemini não divide automaticamente a mídia; no caminho OpenAI, o servidor divide o áudio convertido em blocos temporários de 10 minutos e transcreve todos em ordem.
 - O player de áudio funciona apenas durante a sessão atual, enquanto o arquivo ainda está no navegador.
 - Texto livre e imagem processada ficam apenas na sessão atual da tela.
 - A extração de imagem depende da legibilidade do texto e da qualidade visual da imagem.
 - Imagens sem texto podem gerar uma descrição objetiva do conteúdo visível.
 - A qualidade da transcrição depende da qualidade do áudio.
 - Áudios com ruído, sobreposição de vozes ou fala distante podem gerar trechos incertos.
-- O Gemini transcreve; o DeepSeek interpreta apenas o texto já transcrito.
+- Cada provedor de texto interpreta apenas o texto já transcrito. A análise multimodal direta de áudio/imagem continua dependente das rotas Gemini existentes.
 - A remoção remota de arquivo no Gemini é feita em modo best effort e depende da versão do SDK suportar exclusão.
 - A aquisição do YouTube depende das políticas e formatos disponíveis no momento; o upload de MP4 é o caminho de contingência.
 - A aquisição sem login de links do Instagram também é best-effort; o acesso público no navegador não garante que a plataforma libere a faixa de áudio para extração automatizada.

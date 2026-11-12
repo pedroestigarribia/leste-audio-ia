@@ -10,9 +10,11 @@ import {
 import {
   MissingApiKeyError,
   getGeminiMissingKeyMessage,
+  getOpenAIMissingKeyMessage,
   getMaxFileSizeBytes,
   getServerEnv,
   requireGeminiApiKey,
+  requireOpenAIApiKey,
 } from "@/lib/env";
 import { cleanupFiles, saveUploadedFileToTemp } from "@/lib/temp-files";
 import { parseMultipartFile } from "@/lib/multipart";
@@ -70,12 +72,30 @@ export async function POST(request: Request) {
       );
     }
 
-    requireGeminiApiKey();
-
-    const { transcribeAudioWithGemini } = await import("@/lib/gemini");
+    const env = getServerEnv();
+    if (env.audioAiProvider === "openai") requireOpenAIApiKey();
+    else requireGeminiApiKey();
 
     const savedFile = await saveUploadedFileToTemp(fileEntry);
     filesToCleanup.push(savedFile.filePath);
+
+    if (env.audioAiProvider === "openai") {
+      const { transcribeAudioWithOpenAI } = await import("@/lib/openai-audio");
+      const result = await transcribeAudioWithOpenAI({
+        filePath: savedFile.filePath,
+      });
+      return NextResponse.json<TranscriptionResponse>({
+        ok: true,
+        transcription: result.transcription,
+        meta: {
+          originalFileName: savedFile.originalName,
+          converted: result.converted,
+          model: env.openAiTranscribeModel,
+        },
+      });
+    }
+
+    const { transcribeAudioWithGemini } = await import("@/lib/gemini");
 
     let transcription = "";
     let converted = false;
@@ -144,7 +164,10 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof MissingApiKeyError) {
-      return buildJsonError(getGeminiMissingKeyMessage(), 500);
+      const message = getServerEnv().audioAiProvider === "openai"
+        ? getOpenAIMissingKeyMessage()
+        : getGeminiMissingKeyMessage();
+      return buildJsonError(message, 500);
     }
 
     const message =

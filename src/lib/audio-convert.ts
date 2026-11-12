@@ -1,6 +1,7 @@
 import "server-only";
 
 import { existsSync } from "fs";
+import { promises as fs } from "node:fs";
 import path from "path";
 
 import ffmpegStatic from "ffmpeg-static";
@@ -87,4 +88,45 @@ export async function convertToInlineOpus(inputPath: string): Promise<string> {
 
   await runFfmpegWithFallback(args);
   return outputPath;
+}
+
+export async function convertToOpenAIChunks(inputPath: string, outputDir: string): Promise<string[]> {
+  await fs.mkdir(outputDir, { recursive: true });
+  const outputPattern = path.join(outputDir, "part-%05d.mp3");
+  await runFfmpegWithFallback([
+    "-y",
+    "-i",
+    path.resolve(inputPath),
+    "-map",
+    "0:a:0",
+    "-vn",
+    "-ac",
+    "1",
+    "-ar",
+    "16000",
+    "-c:a",
+    "libmp3lame",
+    "-b:a",
+    "32k",
+    "-f",
+    "segment",
+    "-segment_time",
+    "600",
+    "-reset_timestamps",
+    "1",
+    "-segment_format",
+    "mp3",
+    outputPattern,
+  ]);
+
+  const chunks = (await fs.readdir(outputDir))
+    .filter((name) => /^part-\d{5}\.mp3$/.test(name))
+    .sort()
+    .map((name) => path.join(outputDir, name));
+
+  if (!chunks.length) {
+    throw new Error("O FFmpeg não gerou partes de áudio para transcrição.");
+  }
+
+  return chunks;
 }

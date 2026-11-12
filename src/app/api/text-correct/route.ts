@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { MissingApiKeyError, getDeepSeekMissingKeyMessage } from "@/lib/env";
+import { MissingApiKeyError, getTextAIMissingKeyMessage } from "@/lib/env";
 import { runTextTask } from "@/lib/text-ai";
 import { normalizePlainText } from "@/lib/plain-text";
 import { buildTextCorrectPrompt } from "@/prompts/textCorrect";
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof MissingApiKeyError
-        ? getDeepSeekMissingKeyMessage()
+        ? getTextAIMissingKeyMessage()
         : error instanceof Error
           ? error.message
           : "Falha ao processar o texto.";

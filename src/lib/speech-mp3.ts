@@ -141,3 +141,20 @@ export function encodeWavBuffersToMp3(inputs: Buffer[]): Buffer {
 
   return encodeWavToMp3(wav);
 }
+
+export function pcmBuffersToWav(inputs: Buffer[], sampleRate = 24_000, channels = 1): Buffer {
+  if (!inputs.length) {
+    throw new Error("Nenhum áudio gerado para conversão.");
+  }
+
+  const data = Buffer.concat(inputs);
+  if (data.length % (channels * 2) !== 0) {
+    throw new Error("O áudio PCM retornado pela OpenAI está incompleto.");
+  }
+
+  return Buffer.concat([buildWavHeader(data.length, sampleRate, channels, 16), data]);
+}
+
+export function encodePcmBuffersToMp3(inputs: Buffer[], sampleRate = 24_000, channels = 1): Buffer {
+  return encodeWavToMp3(pcmBuffersToWav(inputs, sampleRate, channels));
+}

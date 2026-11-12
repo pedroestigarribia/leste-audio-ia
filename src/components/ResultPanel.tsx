@@ -242,7 +242,7 @@ function SpeechQuickActions({
           <p className="mt-1 text-sm text-slate-600">
             Transforme textos, respostas, transcrições, imagens, PDFs e documentos completos em áudio.
             Escolha o conteúdo, prepare a narração, ajuste voz e velocidade, acompanhe pelo player e
-            baixe o resultado completo ou dividido por capítulos.
+            baixe o resultado completo ou dividido por capítulos. Voz gerada por inteligência artificial.
           </p>
         </div>
         <div className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-bold uppercase text-slate-500">

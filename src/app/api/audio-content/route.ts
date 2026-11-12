@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { audioIntelligenceResultSchema } from "@/lib/audio-intelligence";
-import { MissingApiKeyError, getGeminiMissingKeyMessage } from "@/lib/env";
+import { MissingApiKeyError, getTextAIMissingKeyMessage } from "@/lib/env";
 import { normalizePlainText } from "@/lib/plain-text";
 import { getTextAiModel, runTextTask } from "@/lib/text-ai";
 import { buildAudioContentPrompt } from "@/prompts/audioContent";
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof MissingApiKeyError
-        ? getGeminiMissingKeyMessage()
+        ? getTextAIMissingKeyMessage()
         : error instanceof Error
           ? error.message
           : "Não foi possível gerar o conteúdo.";

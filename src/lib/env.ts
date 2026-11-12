@@ -13,6 +13,12 @@ const DEFAULTS = {
   geminiLiveTranscribeModel: "gemini-3.5-transcribe-live",
   geminiTtsVoice: "Kore",
   textAiProvider: "gemini" as const,
+  audioAiProvider: "gemini" as const,
+  speechAiProvider: "gemini" as const,
+  openAiTextModel: "gpt-6-luna",
+  openAiTranscribeModel: "gpt-transcribe",
+  openAiRealtimeTtsModel: "gpt-realtime-2.1-mini",
+  openAiTtsVoice: "marin",
   deepSeekBaseUrl: "https://api.deepseek.com",
   deepSeekModel: "deepseek-v4-pro",
   maxParallel: 20,
@@ -40,7 +46,14 @@ const rawEnvSchema = z.object({
   GEMINI_LIVE_MODEL: z.string().optional(),
   GEMINI_LIVE_TRANSCRIBE_MODEL: z.string().optional(),
   GEMINI_TTS_VOICE: z.string().optional(),
-  TEXT_AI_PROVIDER: z.enum(["gemini", "deepseek"]).optional(),
+  TEXT_AI_PROVIDER: z.enum(["gemini", "deepseek", "openai"]).optional(),
+  AUDIO_AI_PROVIDER: z.enum(["gemini", "openai"]).optional(),
+  SPEECH_AI_PROVIDER: z.enum(["gemini", "openai"]).optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_TEXT_MODEL: z.string().optional(),
+  OPENAI_TRANSCRIBE_MODEL: z.string().optional(),
+  OPENAI_REALTIME_TTS_MODEL: z.string().optional(),
+  OPENAI_TTS_VOICE: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_BASE_URL: z.string().optional(),
   DEEPSEEK_MODEL: z.string().optional(),
@@ -78,7 +91,14 @@ type ParsedEnv = {
   geminiLiveModel: string;
   geminiLiveTranscribeModel: string;
   geminiTtsVoice: string;
-  textAiProvider: "gemini" | "deepseek";
+  textAiProvider: "gemini" | "deepseek" | "openai";
+  audioAiProvider: "gemini" | "openai";
+  speechAiProvider: "gemini" | "openai";
+  openAiApiKey?: string;
+  openAiTextModel: string;
+  openAiTranscribeModel: string;
+  openAiRealtimeTtsModel: string;
+  openAiTtsVoice: string;
   deepSeekApiKey?: string;
   deepSeekBaseUrl: string;
   deepSeekModel: string;
@@ -140,6 +160,15 @@ function readEnv(): ParsedEnv {
       normalizeOptionalString(parsed.GEMINI_LIVE_TRANSCRIBE_MODEL) ?? DEFAULTS.geminiLiveTranscribeModel,
     geminiTtsVoice: normalizeOptionalString(parsed.GEMINI_TTS_VOICE) ?? DEFAULTS.geminiTtsVoice,
     textAiProvider: parsed.TEXT_AI_PROVIDER ?? DEFAULTS.textAiProvider,
+    audioAiProvider: parsed.AUDIO_AI_PROVIDER ?? DEFAULTS.audioAiProvider,
+    speechAiProvider: parsed.SPEECH_AI_PROVIDER ?? DEFAULTS.speechAiProvider,
+    openAiApiKey: normalizeOptionalString(parsed.OPENAI_API_KEY),
+    openAiTextModel: normalizeOptionalString(parsed.OPENAI_TEXT_MODEL) ?? DEFAULTS.openAiTextModel,
+    openAiTranscribeModel:
+      normalizeOptionalString(parsed.OPENAI_TRANSCRIBE_MODEL) ?? DEFAULTS.openAiTranscribeModel,
+    openAiRealtimeTtsModel:
+      normalizeOptionalString(parsed.OPENAI_REALTIME_TTS_MODEL) ?? DEFAULTS.openAiRealtimeTtsModel,
+    openAiTtsVoice: normalizeOptionalString(parsed.OPENAI_TTS_VOICE) ?? DEFAULTS.openAiTtsVoice,
     deepSeekApiKey: normalizeOptionalString(parsed.DEEPSEEK_API_KEY),
     deepSeekBaseUrl:
       normalizeOptionalString(parsed.DEEPSEEK_BASE_URL) ?? DEFAULTS.deepSeekBaseUrl,
@@ -186,6 +215,12 @@ export function getAppConfig() {
     geminiLiveModel: env.geminiLiveModel,
     geminiLiveTranscribeModel: env.geminiLiveTranscribeModel,
     textAiProvider: env.textAiProvider,
+    audioAiProvider: env.audioAiProvider,
+    speechAiProvider: env.speechAiProvider,
+    openAiTextModel: env.openAiTextModel,
+    openAiTranscribeModel: env.openAiTranscribeModel,
+    openAiRealtimeTtsModel: env.openAiRealtimeTtsModel,
+    openAiTtsVoice: env.openAiTtsVoice,
     deepSeekModel: env.deepSeekModel,
     maxParallelTranscriptions: env.maxParallelTranscriptions,
     maxFileSizeMb: env.maxFileSizeMb,
@@ -212,6 +247,16 @@ export function getDeepSeekMissingKeyMessage() {
   return "Configure a chave da API no arquivo .env.local";
 }
 
+export function getOpenAIMissingKeyMessage() {
+  return "Configure OPENAI_API_KEY no arquivo .env.local";
+}
+
+export function getTextAIMissingKeyMessage() {
+  return readEnv().textAiProvider === "openai"
+    ? getOpenAIMissingKeyMessage()
+    : getDeepSeekMissingKeyMessage();
+}
+
 export function requireGeminiApiKey() {
   const key = readEnv().geminiApiKey;
 
@@ -227,6 +272,16 @@ export function requireDeepSeekApiKey() {
 
   if (!key) {
     throw new MissingApiKeyError(getDeepSeekMissingKeyMessage());
+  }
+
+  return key;
+}
+
+export function requireOpenAIApiKey() {
+  const key = readEnv().openAiApiKey;
+
+  if (!key) {
+    throw new MissingApiKeyError(getOpenAIMissingKeyMessage());
   }
 
   return key;

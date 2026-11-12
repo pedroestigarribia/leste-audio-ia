@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { MissingApiKeyError, getGeminiMissingKeyMessage, getServerEnv } from "@/lib/env";
+import {
+  MissingApiKeyError,
+  getGeminiMissingKeyMessage,
+  getOpenAIMissingKeyMessage,
+  getServerEnv,
+  requireOpenAIApiKey,
+} from "@/lib/env";
 import { normalizePlainText } from "@/lib/plain-text";
 import { synthesizeSpeechWithGemini } from "@/lib/gemini-tts";
 import type { NarrationOptions, NarrationStyle, PronunciationEntry } from "@/types/audio";
@@ -148,11 +154,11 @@ export async function POST(request: Request) {
 
     const cleanedText = normalizePlainText(parsedBody.data.text);
     const chunks = splitTextForSpeech(cleanedText, parsedBody.data.text.length > 10000 ? 3500 : 3800);
-    const speechModel =
-      parsedBody.data.estilo === "audiolivro"
-        ? getServerEnv().geminiTtsAudiobookModel
-        : getServerEnv().geminiTtsModel;
+    const env = getServerEnv();
+    const useOpenAI = env.speechAiProvider === "openai";
+    if (useOpenAI) requireOpenAIApiKey();
     const audioResults = [];
+    const openAiPcmChunks: Buffer[] = [];
 
     for (const chunk of chunks) {
       const prompt = buildSpeechPrompt(
@@ -163,29 +169,50 @@ export async function POST(request: Request) {
         parsedBody.data.pronunciation,
         parsedBody.data.title,
       );
-      const result = await synthesizeSpeechWithGemini(prompt, { model: speechModel });
-      audioResults.push(result);
+      if (useOpenAI) {
+        try {
+          const { synthesizeSpeechWithOpenAI } = await import("@/lib/openai-realtime-tts");
+          openAiPcmChunks.push(await synthesizeSpeechWithOpenAI(prompt));
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : "erro desconhecido";
+          throw new Error(`Falha ao gerar a parte ${chunk.index + 1} de ${chunks.length}: ${detail}`);
+        }
+      } else {
+        const model = parsedBody.data.estilo === "audiolivro"
+          ? env.geminiTtsAudiobookModel
+          : env.geminiTtsModel;
+        audioResults.push(await synthesizeSpeechWithGemini(prompt, { model }));
+      }
     }
 
-    const firstResult = audioResults[0];
-    let audio = firstResult.audio;
-    let contentType = firstResult.contentType;
+    let audio: Buffer;
+    let contentType: string;
+    if (useOpenAI) {
+      const { encodePcmBuffersToMp3, pcmBuffersToWav } = await import("@/lib/speech-mp3");
+      audio = parsedBody.data.format === "mp3"
+        ? encodePcmBuffersToMp3(openAiPcmChunks)
+        : pcmBuffersToWav(openAiPcmChunks);
+      contentType = parsedBody.data.format === "mp3" ? "audio/mpeg" : "audio/wav";
+    } else {
+      audio = audioResults[0].audio;
+      contentType = audioResults[0].contentType;
 
-    if (parsedBody.data.format === "mp3") {
-      const allResultsAreMp3 = audioResults.every(
-        (item) => item.contentType.includes("mpeg") || item.contentType.includes("mp3"),
-      );
-      const allResultsAreWav = audioResults.every((item) => item.contentType === "audio/wav");
+      if (parsedBody.data.format === "mp3") {
+        const allResultsAreMp3 = audioResults.every(
+          (item) => item.contentType.includes("mpeg") || item.contentType.includes("mp3"),
+        );
+        const allResultsAreWav = audioResults.every((item) => item.contentType === "audio/wav");
 
-      if (allResultsAreMp3) {
-        audio = Buffer.concat(audioResults.map((item) => item.audio));
-        contentType = "audio/mpeg";
-      } else if (allResultsAreWav) {
-        const { encodeWavBuffersToMp3 } = await import("@/lib/speech-mp3");
-        audio = encodeWavBuffersToMp3(audioResults.map((item) => item.audio));
-        contentType = "audio/mpeg";
-      } else {
-        throw new Error("Não foi possível converter todos os blocos de voz para MP3.");
+        if (allResultsAreMp3) {
+          audio = Buffer.concat(audioResults.map((item) => item.audio));
+          contentType = "audio/mpeg";
+        } else if (allResultsAreWav) {
+          const { encodeWavBuffersToMp3 } = await import("@/lib/speech-mp3");
+          audio = encodeWavBuffersToMp3(audioResults.map((item) => item.audio));
+          contentType = "audio/mpeg";
+        } else {
+          throw new Error("Não foi possível converter todos os blocos de voz para MP3.");
+        }
       }
     }
 
@@ -208,7 +235,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof MissingApiKeyError) {
       return NextResponse.json(
-        { ok: false, error: getGeminiMissingKeyMessage() },
+        { ok: false, error: getServerEnv().speechAiProvider === "openai" ? getOpenAIMissingKeyMessage() : getGeminiMissingKeyMessage() },
         {
           status: 500,
           headers: { "X-Leste-Speech-Version": SPEECH_ROUTE_VERSION },

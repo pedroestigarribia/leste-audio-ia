@@ -3,6 +3,7 @@ import "server-only";
 import { getServerEnv } from "@/lib/env";
 import { runDeepSeekTextTask } from "@/lib/deepseek";
 import { runGeminiTextTask } from "@/lib/gemini-text";
+import { runOpenAITextTask } from "@/lib/openai-text";
 
 type TextTaskParams = {
   system?: string;
@@ -17,10 +18,16 @@ export async function runTextTask(params: TextTaskParams) {
     return runDeepSeekTextTask(params);
   }
 
+  if (env.textAiProvider === "openai") {
+    return runOpenAITextTask(params);
+  }
+
   return runGeminiTextTask(params);
 }
 
 export function getTextAiModel() {
   const env = getServerEnv();
-  return env.textAiProvider === "deepseek" ? env.deepSeekModel : env.geminiTextModel;
+  if (env.textAiProvider === "deepseek") return env.deepSeekModel;
+  if (env.textAiProvider === "openai") return env.openAiTextModel;
+  return env.geminiTextModel;
 }

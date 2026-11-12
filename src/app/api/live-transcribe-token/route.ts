@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getGeminiMissingKeyMessage, getServerEnv, MissingApiKeyError, requireGeminiApiKey } from "@/lib/env";
+import {
+  getGeminiMissingKeyMessage,
+  getOpenAIMissingKeyMessage,
+  getServerEnv,
+  MissingApiKeyError,
+  requireGeminiApiKey,
+  requireOpenAIApiKey,
+} from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,6 +77,14 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (getServerEnv().audioAiProvider === "openai") {
+      requireOpenAIApiKey();
+      return NextResponse.json(
+        { ok: true, provider: "openai", uploadOnly: true },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     const key = requireGeminiApiKey();
     const model = getServerEnv().geminiLiveTranscribeModel;
     const body = z.object({ vocabulary: z.array(z.string().trim().min(1).max(80)).max(50).optional() })
@@ -111,7 +126,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, token: token.name, model, config }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof MissingApiKeyError
-      ? getGeminiMissingKeyMessage()
+      ? getServerEnv().audioAiProvider === "openai" ? getOpenAIMissingKeyMessage() : getGeminiMissingKeyMessage()
       : error instanceof LiveProviderConnectionError
         ? `${error.message} A gravação comum continua disponível.`
         : "Falha ao preparar a sessão ao vivo. A gravação comum continua disponível.";

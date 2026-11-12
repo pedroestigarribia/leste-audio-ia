@@ -47,28 +47,38 @@ export async function parseMultipartFile(
   }
 
   const bodyBuffer = Buffer.from(await request.arrayBuffer());
-  const body = bodyBuffer.toString("latin1");
-  const parts = body.split(`--${boundary}`);
+  const boundaryBuffer = Buffer.from(`--${boundary}`);
+  let boundaryIndex = bodyBuffer.indexOf(boundaryBuffer);
 
-  for (const rawPart of parts) {
-    const part = rawPart.replace(/^\r\n/, "").replace(/\r\n$/, "");
-    const headerEndIndex = part.indexOf("\r\n\r\n");
+  while (boundaryIndex !== -1) {
+    let partStart = boundaryIndex + boundaryBuffer.length;
+    if (bodyBuffer.subarray(partStart, partStart + 2).toString() === "--") break;
+    if (bodyBuffer.subarray(partStart, partStart + 2).toString() === "\r\n") partStart += 2;
 
-    if (headerEndIndex === -1) {
+    const nextBoundaryIndex = bodyBuffer.indexOf(boundaryBuffer, partStart);
+    if (nextBoundaryIndex === -1) break;
+    const partEnd = bodyBuffer.subarray(nextBoundaryIndex - 2, nextBoundaryIndex).toString() === "\r\n"
+      ? nextBoundaryIndex - 2
+      : nextBoundaryIndex;
+    const headerEndIndex = bodyBuffer.indexOf("\r\n\r\n", partStart, "latin1");
+
+    if (headerEndIndex === -1 || headerEndIndex > partEnd) {
+      boundaryIndex = nextBoundaryIndex;
       continue;
     }
 
-    const rawHeaders = part.slice(0, headerEndIndex);
+    const rawHeaders = bodyBuffer.toString("latin1", partStart, headerEndIndex);
     const contentDisposition = getHeaderValue(rawHeaders, "content-disposition");
     const disposition = parseContentDisposition(contentDisposition);
 
     if (disposition.name !== fieldName || !disposition.filename) {
+      boundaryIndex = nextBoundaryIndex;
       continue;
     }
 
     const contentTypeHeader = getHeaderValue(rawHeaders, "content-type");
-    const rawContent = part.slice(headerEndIndex + 4).replace(/\r\n--$/, "");
-    const fileBuffer = Buffer.from(rawContent, "latin1");
+    const contentStart = headerEndIndex + 4;
+    const fileBuffer = bodyBuffer.subarray(contentStart, partEnd);
     const arrayBuffer = fileBuffer.buffer.slice(
       fileBuffer.byteOffset,
       fileBuffer.byteOffset + fileBuffer.byteLength,

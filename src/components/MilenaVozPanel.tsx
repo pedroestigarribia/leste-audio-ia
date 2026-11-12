@@ -101,7 +101,7 @@ function InfoBanner() {
       <p>
         Transforme textos, respostas, transcrições, imagens, PDFs e documentos completos em áudio.
         Escolha o conteúdo, prepare a narração, ajuste voz e velocidade, acompanhe pelo player e
-        baixe o resultado completo ou dividido por capítulos.
+        baixe o resultado completo ou dividido por capítulos. A voz da Milena é gerada por inteligência artificial.
       </p>
     </div>
   );

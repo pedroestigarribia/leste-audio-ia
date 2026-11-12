@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { getTextAiModel, runTextTask } from "@/lib/text-ai";
-import { MissingApiKeyError, getDeepSeekMissingKeyMessage } from "@/lib/env";
+import { MissingApiKeyError, getTextAIMissingKeyMessage } from "@/lib/env";
 import { normalizePlainText } from "@/lib/plain-text";
 import { buildPdfTaskPrompt } from "@/prompts/pdf";
 import type { PdfTaskMode } from "@/prompts/pdf";
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof MissingApiKeyError
-        ? getDeepSeekMissingKeyMessage()
+        ? getTextAIMissingKeyMessage()
         : error instanceof Error
           ? error.message
           : "Falha ao processar o texto do documento.";

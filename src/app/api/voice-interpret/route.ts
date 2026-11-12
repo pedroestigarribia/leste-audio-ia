@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getGeminiMissingKeyMessage, getDeepSeekMissingKeyMessage, getServerEnv, MissingApiKeyError } from "@/lib/env";
+import { getTextAIMissingKeyMessage, MissingApiKeyError } from "@/lib/env";
 import { getTextAiModel, runTextTask } from "@/lib/text-ai";
 import { normalizePlainText } from "@/lib/plain-text";
 import { buildVoiceSessionPrompt } from "@/prompts/voiceSession";
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof MissingApiKeyError
-      ? getServerEnv().textAiProvider === "deepseek" ? getDeepSeekMissingKeyMessage() : getGeminiMissingKeyMessage()
+      ? getTextAIMissingKeyMessage()
       : error instanceof z.ZodError || error instanceof SyntaxError
         ? "A IA retornou um formato inválido. Tente novamente."
         : error instanceof Error ? error.message : "Falha ao interpretar a voz.";

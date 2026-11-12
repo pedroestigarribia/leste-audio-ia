@@ -50,7 +50,7 @@ export default function PdfAudiobookPanel({
             Audiolivro com a Milena
           </h3>
           <p className="mt-1 text-sm text-slate-600">
-            O livro é dividido em capítulos para gerar, ouvir, pausar e baixar MP3s sem travar a tela.
+            O livro é dividido em capítulos para gerar, ouvir, pausar e baixar MP3s. Voz sintética gerada por inteligência artificial.
           </p>
         </div>
         <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-rose-700 shadow-sm">
