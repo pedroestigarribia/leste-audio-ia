@@ -314,7 +314,7 @@ export default function EditorialWorkflowPanel({
   const [pronunciationNotes, setPronunciationNotes] = useState(initialSnapshot?.pronunciationNotes ?? "");
   const [chapterSelection, setChapterSelection] = useState<Record<string, boolean>>(initialSnapshot?.chapterSelection ?? {});
   const [audiobookProgress, setAudiobookProgress] = useState("");
-  const [audiobookTtsModel, setAudiobookTtsModel] = useState("gemini-2.5-pro-preview-tts");
+  const [audiobookTtsModel, setAudiobookTtsModel] = useState("gpt-realtime-2.1-mini");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
@@ -328,8 +328,8 @@ export default function EditorialWorkflowPanel({
 
   useEffect(() => {
     let active = true;
-    void fetch("/api/health").then((response) => response.json()).then((health: { geminiAudiobookTtsModel?: string }) => {
-      if (active && health.geminiAudiobookTtsModel) setAudiobookTtsModel(health.geminiAudiobookTtsModel);
+    void fetch("/api/health").then((response) => response.json()).then((health: { openAiRealtimeTtsModel?: string }) => {
+      if (active && health.openAiRealtimeTtsModel) setAudiobookTtsModel(health.openAiRealtimeTtsModel);
     }).catch(() => undefined);
     return () => { active = false; };
   }, []);
@@ -868,9 +868,6 @@ export default function EditorialWorkflowPanel({
   const selectedChapters = Object.entries(chapterSelection).filter(([, checked]) => checked).map(([number]) => chapters[number]).filter((chapter): chapter is EditorialChapter => Boolean(chapter?.text.trim()));
   const selectedWords = selectedChapters.reduce((total, chapter) => total + chapter.text.trim().split(/\s+/).filter(Boolean).length, 0);
   const estimatedMinutes = selectedWords ? Math.ceil(selectedWords / 150) : 0;
-  const audiobookAudioRatePerMillion = audiobookTtsModel.includes("2.5-pro") ? 20 : audiobookTtsModel.includes("2.5-flash") ? 10 : audiobookTtsModel.includes("3.1") ? 20 : audiobookTtsModel.includes("lite") ? 6 : 9;
-  const audiobookTextRatePerMillion = audiobookTtsModel.includes("2.5-pro") || audiobookTtsModel.includes("3.1") ? 1 : 0.5;
-  const estimatedUsd = selectedWords ? ((selectedWords / 150 * 60) * 25 * audiobookAudioRatePerMillion / 1_000_000) + (selectedWords / 0.75 * audiobookTextRatePerMillion / 1_000_000) : 0;
 
   function saveProject() {
     const project: ProjectFile = {
@@ -1256,7 +1253,7 @@ export default function EditorialWorkflowPanel({
           </div> : null}
           {Object.keys(chapters).length ? <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
             <h4 className="text-sm font-black text-slate-900">Produzir audiobook por capítulos</h4>
-            <p className="text-xs leading-5 text-slate-700">{selectedWords.toLocaleString("pt-BR")} palavras · cerca de {estimatedMinutes} min · estimativa aproximada: US$ {estimatedUsd.toFixed(3)} com {audiobookTtsModel}. O valor real depende da contagem de tokens e das tarifas vigentes.</p>
+            <p className="text-xs leading-5 text-slate-700">{selectedWords.toLocaleString("pt-BR")} palavras · cerca de {estimatedMinutes} min · voz sintética OpenAI ({audiobookTtsModel}). O custo não é estimado aqui porque depende dos tokens de áudio cobrados pela API.</p>
             <div className="flex flex-wrap gap-2"><ActionButton disabled={busy || !selectedChapters.length} fullWidth={false} loading={busy} onClick={() => void generateSelectedAudiobook()} type="button" variant="primary"><Mic2 className="h-4 w-4" /> Gerar/retomar capítulos selecionados</ActionButton><ActionButton disabled={!selectedChapters.length} fullWidth={false} onClick={() => void downloadSelectedAudiobook()} type="button" variant="secondary"><FileDown className="h-4 w-4" /> Baixar pacote ZIP</ActionButton><ActionButton disabled={!selectedChapters.length} fullWidth={false} onClick={() => void downloadCompleteAudiobook()} type="button" variant="ghost"><Download className="h-4 w-4" /> Baixar áudio completo</ActionButton></div>
             {audiobookProgress ? <p aria-live="polite" className="text-xs font-bold text-blue-900">{audiobookProgress}</p> : null}
             <div className="space-y-2">{Object.entries(chapters).sort(([a], [b]) => Number(a) - Number(b)).map(([number, chapter]) => {

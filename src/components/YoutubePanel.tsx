@@ -59,6 +59,10 @@ function formatClock(seconds: number): string {
   return [h, m, s].map((v) => v.toString().padStart(2, "0")).join(":");
 }
 
+function formatConfidence(confidence?: number) {
+  return confidence === undefined ? "não estimada" : `${(confidence * 100).toFixed(0)}%`;
+}
+
 function parseTimeInput(input: string): number | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
@@ -221,10 +225,8 @@ function buildTranscriptText(state: YoutubeAnalysisState): string {
       `[${formatClock(seg.startTime)} - ${formatClock(seg.endTime)}]`,
       `${seg.participant}:`,
       seg.text,
-      "",
-      "Tonalidade:",
-      seg.tone,
-      `Confiança: ${(seg.confidence * 100).toFixed(0)}%`,
+      ...(seg.tone ? ["", "Tonalidade:", seg.tone] : []),
+      ...(seg.confidence === undefined ? [] : [`Confiança: ${formatConfidence(seg.confidence)}`]),
       "",
       "------------------------",
       "",
@@ -405,11 +407,11 @@ export default function YoutubePanel() {
             } else if (event.step === "gemini" && event.status === "in_progress") {
               setProgress({ message: event.message, percent: 60 });
             } else if (event.step === "gemini" && event.status === "done") {
-              setProgress({ message: "Análise do Gemini concluída.", percent: 75 });
+              setProgress({ message: "Transcrição temporal OpenAI concluída.", percent: 75 });
             } else if (event.step === "deepseek" && event.status === "in_progress") {
               setProgress({ message: event.message, percent: 85 });
             } else if (event.step === "deepseek" && event.status === "done") {
-              setProgress({ message: "Análise do DeepSeek concluída.", percent: 95 });
+              setProgress({ message: "Análise textual OpenAI concluída.", percent: 95 });
             } else if (event.step === "complete") {
               setResult(event.result);
               setVideoInfo(event.result.video);
@@ -494,7 +496,7 @@ export default function YoutubePanel() {
     const { buildDocxBlob } = await import("@/lib/export-docx");
 
     const sections = [
-      { title: "Transcrição", content: result.gemini.segments.map((s) => `[${formatClock(s.startTime)} - ${formatClock(s.endTime)}]\n${s.participant}:\n${s.text}\n\nTonalidade: ${s.tone}\nConfiança: ${(s.confidence * 100).toFixed(0)}%`).join("\n\n---\n\n") },
+      { title: "Transcrição", content: result.gemini.segments.map((s) => `[${formatClock(s.startTime)} - ${formatClock(s.endTime)}]\n${s.participant}:\n${s.text}${s.tone ? `\n\nTonalidade: ${s.tone}` : ""}${s.confidence === undefined ? "" : `\n\nConfiança: ${formatConfidence(s.confidence)}`}`).join("\n\n---\n\n") },
       { title: "Resumo", content: result.deepseek.summary },
       { title: "Interpretação", content: result.deepseek.interpretation },
       { title: "Assuntos", content: result.deepseek.topics },
@@ -551,9 +553,10 @@ export default function YoutubePanel() {
         </p>
         <h2 className="text-2xl font-black text-slate-950">Analisar vídeo do YouTube</h2>
         <p className="text-sm text-slate-600">
-          Cole o link do YouTube, escolha vídeo completo ou trecho específico, e processe com
-          Gemini (transcrição, vozes, tonalidade, cenas) e DeepSeek (resumo, interpretação,
-          conteúdo).
+          Cole um link público do YouTube para extrair e analisar o áudio, gerar transcrição
+          temporal e obter resumo e interpretação pela OpenAI. Quando disponível, o vídeo também
+          é descrito por até oito quadros representativos. Falantes e tonalidade acústica não
+          são identificados automaticamente.
         </p>
       </div>
 
@@ -869,7 +872,7 @@ function TranscriptionTab({
   const allText = filteredSegments
     .map(
       (s) =>
-        `[${formatClock(s.startTime)} - ${formatClock(s.endTime)}]\n${s.participant}:\n${s.text}\n\nTonalidade: ${s.tone}\nConfiança: ${(s.confidence * 100).toFixed(0)}%`,
+        `[${formatClock(s.startTime)} - ${formatClock(s.endTime)}]\n${s.participant}:\n${s.text}${s.tone ? `\n\nTonalidade: ${s.tone}` : ""}${s.confidence === undefined ? "" : `\n\nConfiança: ${formatConfidence(s.confidence)}`}`,
     )
     .join("\n\n---\n\n");
 
@@ -934,9 +937,11 @@ function TranscriptionTab({
               <span className="rounded-md bg-amber-100 px-2 py-1 text-xs font-bold text-slate-700">
                 {seg.participant}
               </span>
-              <span className="rounded-md bg-slate-200 px-2 py-1 text-xs font-medium text-slate-500">
-                Confiança: {(seg.confidence * 100).toFixed(0)}%
-              </span>
+              {seg.confidence === undefined ? null : (
+                <span className="rounded-md bg-slate-200 px-2 py-1 text-xs font-medium text-slate-500">
+                  Confiança: {formatConfidence(seg.confidence)}
+                </span>
+              )}
             </div>
             <p className="whitespace-pre-wrap text-sm text-slate-800">{seg.text}</p>
             <div className="rounded-md bg-white px-3 py-2">
@@ -965,10 +970,15 @@ function ParticipantsTab({
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-600">
-        Vozes separadas pelo Gemini. Os nomes só aparecem quando há evidência no título,
-        descrição, apresentação verbal ou texto exibido no vídeo. Você pode renomear manualmente
-        — todas as falas relacionadas serão atualizadas.
+        A transcrição atual não identifica automaticamente quem está falando. Se houver falantes
+        disponíveis em outra fonte, os nomes poderão ser ajustados manualmente aqui.
       </p>
+
+      {result.gemini.participants.length === 0 ? (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          Nenhum falante foi identificado neste processamento.
+        </p>
+      ) : null}
 
       {result.gemini.participants.map((p) => (
         <div
@@ -1083,25 +1093,29 @@ function ToneTab({ result }: { result: YoutubeAnalysisState }) {
         </div>
       ) : null}
 
-      <div className="space-y-2">
-        <h3 className="text-sm font-semibold uppercase text-slate-500">
-          Tonalidade por segmento
-        </h3>
-        {result.gemini.segments.map((seg, i) => (
-          <div
-            className="rounded-lg border border-slate-200 bg-slate-50/80 p-3"
-            key={`${seg.startTime}-${i}`}
-          >
-            <div className="flex items-center gap-2">
-              <span className="rounded bg-leste-blue px-1.5 py-0.5 text-xs font-bold text-white">
-                {formatClock(seg.startTime)}
-              </span>
-              <span className="text-xs font-bold text-slate-600">{seg.participant}</span>
+      {!result.gemini.toneChanges && !result.gemini.segments.some((segment) => segment.tone) ? (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          A análise atual não avalia tonalidade da voz; este resultado contém a transcrição e sua
+          análise textual.
+        </p>
+      ) : null}
+
+      {result.gemini.segments.some((segment) => segment.tone) ? (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold uppercase text-slate-500">Tonalidade por segmento</h3>
+          {result.gemini.segments.filter((segment) => segment.tone).map((seg, i) => (
+            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3" key={`${seg.startTime}-${i}`}>
+              <div className="flex items-center gap-2">
+                <span className="rounded bg-leste-blue px-1.5 py-0.5 text-xs font-bold text-white">
+                  {formatClock(seg.startTime)}
+                </span>
+                <span className="text-xs font-bold text-slate-600">{seg.participant}</span>
+              </div>
+              <p className="mt-2 text-sm text-slate-600">{seg.tone}</p>
             </div>
-            <p className="mt-2 text-sm text-slate-600">{seg.tone}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1211,8 +1225,8 @@ function ExportTab({
       <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-4">
         <h3 className="text-sm font-black uppercase text-slate-900">Exportar análise completa</h3>
         <p className="mt-1 text-sm text-slate-600">
-          Inclui transcrição, participantes, tonalidade, notas de cena, resumo, interpretação,
-          assuntos, frases importantes, estilo, perfil de comunicação e conteúdo gerado.
+          Inclui a transcrição temporal e os resultados textuais disponíveis: resumo,
+          interpretação, assuntos, frases importantes, estilo, perfil de comunicação e conteúdo gerado.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <ActionButton fullWidth onClick={onDownloadTxt} type="button" variant="secondary">

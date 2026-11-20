@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
-import { ArrowDown, ArrowUp, Copy, Headphones, Layers3, Merge, RefreshCw, Split, Volume2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, Copy, Download, Headphones, Layers3, Merge, RefreshCw, Split, Volume2 } from "lucide-react";
 
 import ActionButton from "@/components/ActionButton";
 import ErrorBox from "@/components/ErrorBox";
 import NarrationReviewPanel from "@/components/NarrationReviewPanel";
 import { copyToClipboard } from "@/lib/clipboard";
+import { cleanNarrativeReferences } from "@/lib/narrative-export";
 import type { AudioItem, ContinuityPlan, SessionNarrativeFormat } from "@/types/audio";
 
 type ContinuityPanelProps = {
@@ -15,6 +16,7 @@ type ContinuityPanelProps = {
   isLoading: boolean;
   error?: string;
   onAnalyze: () => void;
+  onCancelAnalyze: () => void;
   onChange: (plan: ContinuityPlan) => void;
   onSpeak: (key: `review:${string}`, title: string, text: string) => void;
   isSpeechLoading?: boolean;
@@ -33,6 +35,7 @@ type ContinuityPanelProps = {
   narrativeSpeechError?: string;
   isNarrativeSpeechActive: boolean;
   onDownloadNarrative: () => void;
+  onDownloadNarrativeDocx: (includeSources: boolean) => void;
   onStopSpeech: () => void;
   transcriptOrder: "original" | "context";
   onTranscriptOrderChange: (order: "original" | "context") => void;
@@ -50,12 +53,22 @@ const narrativeFormats: Array<{ value: SessionNarrativeFormat; label: string }> 
 ];
 
 export default function ContinuityPanel({
-  items, plan, isLoading, error, onAnalyze, onChange, onSpeak, isSpeechLoading,
+  items, plan, isLoading, error, onAnalyze, onCancelAnalyze, onChange, onSpeak, isSpeechLoading,
   narrative, narrativeFormat, narrativeLoading, narrativeError, onNarrativeChange,
   onNarrativeFormatChange, onGenerateNarrative, onToggleAnalysis, onToggleDuplicate,
-  narrativeStale, narrativeSpeechUrl, narrativeSpeechLoading, narrativeSpeechError, isNarrativeSpeechActive, onDownloadNarrative, onStopSpeech,
+  narrativeStale, narrativeSpeechUrl, narrativeSpeechLoading, narrativeSpeechError, isNarrativeSpeechActive, onDownloadNarrative, onDownloadNarrativeDocx, onStopSpeech,
   transcriptOrder, onTranscriptOrderChange,
 }: ContinuityPanelProps) {
+  const [includeSources, setIncludeSources] = useState(false);
+  const [copyNotice, setCopyNotice] = useState("");
+  async function copyNarrative() {
+    try {
+      await copyToClipboard(cleanNarrativeReferences(narrative));
+      setCopyNotice("Narrativa copiada sem as marcações de fonte.");
+    } catch {
+      setCopyNotice("Não foi possível copiar. Selecione o texto da narrativa manualmente.");
+    }
+  }
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const contextualItems = useMemo(() => {
     const groupedIds = new Set(plan?.groups.flatMap((group) => group.itemIds) ?? []);
@@ -114,9 +127,10 @@ export default function ContinuityPanel({
   return (
     <section className="space-y-5 rounded-xl border border-blue-100 bg-white p-4 shadow-editorial sm:p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div><h2 className="flex items-center gap-2 text-xl font-black text-slate-950"><Layers3 className="h-5 w-5 text-leste-blue" /> Continuidade e narrativa</h2><p className="mt-1 text-sm leading-6 text-slate-600">Agrupa áudios misturados, propõe a ordem da narrativa e permite ajuste manual nesta sessão.</p></div>
+        <div><h2 className="flex items-center gap-2 text-xl font-black text-slate-950"><Layers3 className="h-5 w-5 text-leste-blue" /> Continuidade e narrativa</h2><p className="mt-1 text-sm leading-6 text-slate-600">Agrupa áudios misturados, propõe a ordem da narrativa e permite ajuste manual nesta sessão. Em lotes grandes, a comparação entre blocos pode levar tempo e consumir créditos da API.</p></div>
         <div className="grid gap-2 sm:flex">
           <ActionButton className="lg:w-auto" fullWidth loading={isLoading} onClick={onAnalyze} type="button" variant="secondary"><RefreshCw className="h-4 w-4" /> {plan ? "Atualizar proposta" : "Organizar sequência"}</ActionButton>
+          {isLoading ? <ActionButton className="lg:w-auto" fullWidth onClick={onCancelAnalyze} type="button" variant="danger">Cancelar organização</ActionButton> : null}
           <ActionButton className="lg:w-auto" fullWidth disabled={!items.length} onClick={() => onTranscriptOrderChange(transcriptOrder === "original" ? "context" : "original")} type="button" variant="ghost">{transcriptOrder === "original" ? "Ver ordem contextual" : "Restaurar ordem original"}</ActionButton>
         </div>
       </div>
@@ -131,6 +145,12 @@ export default function ContinuityPanel({
       {contextualItems.some((item) => !plan?.groups.some((group) => group.itemIds.includes(item.id))) ? <div className="rounded-xl border border-dashed border-slate-300 p-4"><h3 className="font-bold text-slate-900">Áudios ainda sem grupo</h3><ul className="mt-3 space-y-2">{contextualItems.filter((item) => !plan?.groups.some((group) => group.itemIds.includes(item.id))).map((item) => <li className="flex flex-col gap-2 rounded-lg bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between" key={item.id}><span className="text-sm font-semibold">{item.name}</span><div className="flex flex-wrap gap-3 text-xs text-slate-600"><label className="flex items-center gap-2"><input checked={item.includeInAnalysis !== false} onChange={(event) => onToggleAnalysis(item.id, event.currentTarget.checked)} type="checkbox" /> Incluir na análise</label><label className="flex items-center gap-2"><input checked={Boolean(item.isDuplicate)} onChange={(event) => onToggleDuplicate(item.id, event.currentTarget.checked)} type="checkbox" /> Marcar duplicado</label></div></li>)}</ul></div> : null}
       {unifiedText ? <div className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/50 p-4"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-bold text-slate-950">Texto integral unificado</h3><p className="text-xs text-slate-600">Texto original completo, com a fonte de cada áudio. Não é resumido nem editado.</p></div><div className="flex gap-2"><ActionButton fullWidth={false} onClick={() => void copyToClipboard(unifiedText)} type="button" variant="ghost"><Copy className="h-4 w-4" /> Copiar</ActionButton><ActionButton fullWidth={false} onClick={() => onSpeak("review:continuidade", "Texto integral unificado", unifiedText)} type="button" variant="secondary"><Volume2 className="h-4 w-4" /> Ouvir</ActionButton></div></div><textarea aria-label="Texto integral unificado" className="min-h-48 w-full rounded-lg border border-blue-100 bg-white p-3 text-sm leading-6" readOnly value={unifiedText} /></div> : null}
       <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4"><div><h3 className="font-bold text-slate-950">Narrativa final revisável</h3><p className="text-sm text-slate-600">Gere a partir dos áudios incluídos na análise. A voz da Milena só será criada quando você clicar em Ouvir.</p>{narrative && narrativeStale ? <p className="mt-2 text-sm font-semibold text-amber-900">Esta narrativa foi gerada antes da última alteração na sessão. Atualize-a antes de exportar ou narrar.</p> : null}</div><div className="flex flex-col gap-2 sm:flex-row"><select aria-label="Formato da narrativa" className="min-h-11 rounded-lg border border-slate-200 bg-white px-3" onChange={(event) => onNarrativeFormatChange(event.currentTarget.value as SessionNarrativeFormat)} value={narrativeFormat}>{narrativeFormats.map((format) => <option key={format.value} value={format.value}>{format.label}</option>)}</select><ActionButton className="sm:w-auto" fullWidth loading={narrativeLoading} onClick={onGenerateNarrative} type="button" variant="primary">Gerar narrativa final</ActionButton></div>{narrativeError ? <ErrorBox message={narrativeError} /> : null}{narrativeSpeechError ? <ErrorBox message={narrativeSpeechError} /> : null}{narrative ? <><div className="flex flex-wrap gap-2"><ActionButton fullWidth={false} loading={narrativeSpeechLoading} onClick={() => onSpeak("review:narrativa-final", "Narrativa final", narrative)} type="button" variant="secondary"><Volume2 className="h-4 w-4" /> {narrativeSpeechUrl ? "Ouvir com Milena" : "Gerar voz da Milena"}</ActionButton><ActionButton fullWidth={false} onClick={() => void copyToClipboard(narrative)} type="button" variant="ghost"><Copy className="h-4 w-4" /> Copiar narrativa</ActionButton></div><textarea aria-label="Narrativa final editável" className="min-h-64 w-full rounded-lg border border-amber-200 bg-white p-3 text-sm leading-6" onChange={(event) => onNarrativeChange(event.currentTarget.value)} value={narrative} />{narrativeSpeechUrl && isNarrativeSpeechActive ? <div className="space-y-2 rounded-lg border border-blue-100 bg-white p-3"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-slate-700">Leitura com voz da Milena</p><div className="flex gap-2"><ActionButton fullWidth={false} onClick={onStopSpeech} type="button" variant="ghost">Parar</ActionButton><ActionButton fullWidth={false} onClick={onDownloadNarrative} type="button" variant="secondary">Baixar MP3</ActionButton></div></div><audio autoPlay className="w-full" controls src={narrativeSpeechUrl}>Seu navegador não suporta reprodução de áudio.</audio></div> : null}</> : null}</div>
+      {narrative ? <div className="flex flex-wrap items-center gap-3">
+        <ActionButton fullWidth={false} onClick={() => void copyNarrative()} type="button" variant="ghost"><Copy className="h-4 w-4" /> Copiar narrativa limpa</ActionButton>
+        <ActionButton fullWidth={false} onClick={() => onDownloadNarrativeDocx(includeSources)} type="button" variant="secondary"><Download className="h-4 w-4" /> Baixar narrativa DOCX</ActionButton>
+        <label className="flex items-center gap-2 text-sm text-slate-700"><input checked={includeSources} onChange={(event) => setIncludeSources(event.currentTarget.checked)} type="checkbox" /> Incluir lista de fontes no DOCX</label>
+        {copyNotice ? <p aria-live="polite" className="text-sm text-slate-700">{copyNotice}</p> : null}
+      </div> : null}
       {unifiedText ? <NarrationReviewPanel isSpeechLoading={isSpeechLoading} onSpeak={onSpeak} sourceKey="continuidade" text={unifiedText} title="Narração unificada" /> : null}
     </section>
   );

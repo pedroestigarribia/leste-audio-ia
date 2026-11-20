@@ -1,11 +1,18 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const baseUrl = process.env.TEST_BASE_URL || "http://localhost:3000";
 
 async function main() {
+  const livePanel = fs.readFileSync(path.join(__dirname, "../src/components/LiveVoicePanel.tsx"), "utf8");
+  assert.match(livePanel, /async function retryLiveConnection\(\)/);
+  assert.match(livePanel, /payload\.provider !== "openai"/);
+  assert.match(livePanel, /if \(failureRef\.current \|\| !segmentsRef\.current\.length\)/);
+  assert.match(livePanel, /Tentar reconectar/);
+
   const health = await fetch(`${baseUrl}/api/health`).then((response) => response.json());
   assert.equal(health.ok, true);
-  assert.equal(health.geminiLiveTranscribeModel, "gemini-3.5-transcribe-live");
 
   const invalid = await fetch(`${baseUrl}/api/voice-interpret`, {
     method: "POST",
@@ -28,6 +35,17 @@ async function main() {
   const payload = await response.json();
   assert.equal(response.status, 200, payload.error || "Falha ao emitir token temporário");
   assert.equal(payload.ok, true);
+
+  if (health.audioAiProvider === "openai") {
+    assert.equal(payload.provider, "openai");
+    assert.equal(payload.model, health.openAiLiveTranscribeModel);
+    assert.match(payload.token, /^ek_/);
+    assert.ok(Number.isInteger(payload.expiresAt));
+    console.log(`OpenAI Live: retomada manual preserva a gravação completa; token efêmero emitido para ${payload.model}. O SDP/WebRTC e a captura real exigem teste no navegador.`);
+    return;
+  }
+
+  assert.equal(payload.provider, "gemini");
   assert.match(payload.token, /^auth_tokens\//);
   assert.equal(payload.model, health.geminiLiveTranscribeModel);
   assert.ok(payload.config.inputAudioTranscription.customVocabulary.includes("Mulheres do Leste"));

@@ -20,6 +20,7 @@ type AudioListProps = {
   onExecutePrompt: (itemId: string, prompt: string) => Promise<string>;
   onAnalyzeAudio: (itemId: string) => void;
   onGenerateAudioContent: (itemId: string, kind: AudioContentKind) => void;
+  onEditStory: (itemId: string, text: string) => void;
   onOrganize: (itemId: string) => void;
   onRemove: (itemId: string) => void;
   onRetry: (itemId: string) => void;
@@ -68,6 +69,7 @@ export default function AudioList({
   onExecutePrompt,
   onAnalyzeAudio,
   onGenerateAudioContent,
+  onEditStory,
   onOrganize,
   onRemove,
   onRetry,
@@ -133,6 +135,7 @@ export default function AudioList({
           onExecutePrompt={(prompt) => onExecutePrompt(item.id, prompt)}
           onOrganize={() => onOrganize(item.id)}
           onGenerateAudioContent={(kind) => onGenerateAudioContent(item.id, kind)}
+          onEditStory={(text) => onEditStory(item.id, text)}
           onRemove={() => onRemove(item.id)}
           onRetry={() => onRetry(item.id)}
           onSummarize={() => onSummarize(item.id)}
@@ -142,6 +145,7 @@ export default function AudioList({
           organizeError={taskErrors[`organize:${item.id}`]}
           intentError={taskErrors[`intent:${item.id}`]}
           showRetry={item.status === "error" && item.originalFileAvailable !== false && !isValidationError(item.error)}
+          storyError={taskErrors[`audio-content:${item.id}:storytelling`]}
           summaryError={taskErrors[`summary:${item.id}`]}
           speechAudioUrls={speechAudioUrls}
           speechErrors={speechErrors}

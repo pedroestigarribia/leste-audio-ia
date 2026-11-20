@@ -198,8 +198,8 @@ export function buildSemanticSegments(
       hasStory: hint?.hasStory ?? false,
       hasInsight: hint?.hasInsight ?? false,
       hasStrongStatement: hint?.hasStrongStatement ?? false,
-      semanticStartConfidence: segment.confidence ?? 0.6,
-      semanticEndConfidence: segment.confidence ?? 0.6,
+      semanticStartConfidence: segment.confidence ?? 0,
+      semanticEndConfidence: segment.confidence ?? 0,
     } satisfies SemanticSegment;
   });
 }

@@ -8,6 +8,7 @@ type DeepSeekTextTaskParams = {
   system?: string;
   prompt: string;
   temperature?: number;
+  signal?: AbortSignal;
 };
 
 function flattenContent(content: unknown) {
@@ -40,6 +41,7 @@ export async function runDeepSeekTextTask({
   system,
   prompt,
   temperature = 0.2,
+  signal,
 }: DeepSeekTextTaskParams): Promise<string> {
   const env = getServerEnv();
   const apiKey = requireDeepSeekApiKey();
@@ -47,6 +49,7 @@ export async function runDeepSeekTextTask({
   const client = new OpenAI({
     apiKey,
     baseURL: env.deepSeekBaseUrl,
+    ...(signal ? { maxRetries: 0 } : {}),
   });
 
   try {
@@ -58,7 +61,7 @@ export async function runDeepSeekTextTask({
         ...(system ? [{ role: "system" as const, content: system }] : []),
         { role: "user" as const, content: prompt },
       ],
-    });
+    }, { signal });
 
     const output = flattenContent(response.choices[0]?.message?.content);
 

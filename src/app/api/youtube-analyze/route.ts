@@ -73,14 +73,14 @@ function parseDeepSeekSections(text: string): YoutubeDeepSeekResult {
   };
 }
 
-function applyCutOffset(gemini: YoutubeGeminiResult, cutStart: number): YoutubeGeminiResult {
+function applyCutOffset(transcript: YoutubeGeminiResult, cutStart: number): YoutubeGeminiResult {
   if (!cutStart || cutStart <= 0) {
-    return gemini;
+    return transcript;
   }
 
   return {
-    ...gemini,
-    segments: gemini.segments.map((seg) => ({
+    ...transcript,
+    segments: transcript.segments.map((seg) => ({
       ...seg,
       startTime: seg.startTime + cutStart,
       endTime: seg.endTime + cutStart,
@@ -254,43 +254,41 @@ export async function POST(request: Request) {
           send({
             step: "gemini",
             status: "in_progress",
-            message: "Enviando ao Gemini para transcrição e análise...",
+            message: "Transcrevendo com marcação temporal pela OpenAI...",
           }),
         );
 
-        const { analyzeYoutubeWithGemini } = await import("@/lib/gemini-video");
+        const { analyzeYoutubeWithOpenAI } = await import("@/lib/openai-video-analysis");
 
-        const geminiResult = await analyzeYoutubeWithGemini({
+        const transcriptResult = await analyzeYoutubeWithOpenAI({
           audioPath: segmentFiles.audioPath,
-          audioMimeType: "audio/wav",
           videoPath: segmentFiles.videoPath,
-          videoMimeType: "video/mp4",
           title: video.title,
-          channel: video.channel,
-          cutStart,
-          cutEnd,
+          durationSec: cutEnd !== null
+            ? cutEnd - (cutStart ?? 0)
+            : Math.max(1, video.duration - (cutStart ?? 0)),
         });
 
-        const adjustedGemini = applyCutOffset(geminiResult, cutStart ?? 0);
+        const adjustedTranscript = applyCutOffset(transcriptResult, cutStart ?? 0);
 
         controller.enqueue(
-          send({ step: "gemini", status: "done", message: "Análise do Gemini concluída." }),
+          send({ step: "gemini", status: "done", message: "Transcrição temporal OpenAI concluída." }),
         );
 
         controller.enqueue(
           send({
             step: "deepseek",
             status: "in_progress",
-            message: "Enviando ao DeepSeek para revisão e interpretação...",
+            message: "Analisando e organizando o conteúdo com OpenAI...",
           }),
         );
 
         const deepSeekPrompt = buildYoutubeAnalysisPrompt({
           title: video.title,
           channel: video.channel,
-          segments: adjustedGemini.segments,
-          language: adjustedGemini.language,
-          sceneNotes: adjustedGemini.sceneNotes,
+          segments: adjustedTranscript.segments,
+          language: adjustedTranscript.language,
+          sceneNotes: adjustedTranscript.sceneNotes,
         });
 
         const deepSeekRaw = await runTextTask({
@@ -303,14 +301,14 @@ export async function POST(request: Request) {
         const deepSeekResult = parseDeepSeekSections(deepSeekRaw);
 
         controller.enqueue(
-          send({ step: "deepseek", status: "done", message: "Análise do DeepSeek concluída." }),
+          send({ step: "deepseek", status: "done", message: "Análise textual OpenAI concluída." }),
         );
 
         const result: YoutubeAnalysisState = {
           video,
           cutStart,
           cutEnd,
-          gemini: adjustedGemini,
+          gemini: adjustedTranscript,
           deepseek: deepSeekResult,
           processedAt: new Date().toISOString(),
         };

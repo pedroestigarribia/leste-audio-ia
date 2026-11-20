@@ -1,104 +1,15 @@
 import "server-only";
 
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
+import { createReadStream } from "node:fs";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { nanoid } from "nanoid";
-import { z } from "zod";
 
-import { deleteGeminiRemoteFile, waitForGeminiFileActive } from "@/lib/gemini";
-import { getServerEnv, requireGeminiApiKey } from "@/lib/env";
-import { buildVideoTranscriptionPrompt } from "@/prompts/videoTranscription";
-import type { Participant, TranscriptSegment } from "@/types/video";
-
-const transcriptSchema = z.object({
-  language: z.string().default("pt-BR"),
-  segments: z.array(
-    z.object({
-      id: z.string().optional(),
-      start: z.number().nonnegative(),
-      end: z.number().nonnegative(),
-      text: z.string(),
-      speakerId: z.string().optional(),
-      confidence: z.number().min(0).max(1).optional(),
-      words: z.array(
-        z.object({
-          word: z.string(),
-          start: z.number().nonnegative(),
-          end: z.number().nonnegative(),
-          confidence: z.number().min(0).max(1).optional(),
-          speakerId: z.string().optional(),
-        }),
-      ).default([]),
-    }),
-  ),
-  participants: z.array(
-    z.object({
-      id: z.string(),
-      label: z.string(),
-      confidence: z.number().min(0).max(1).optional(),
-      speakingTime: z.number().nonnegative().optional(),
-    }),
-  ).default([]),
-  semanticHints: z.array(z.object({
-    segmentId: z.string(),
-    topic: z.string().default(""),
-    subtopics: z.array(z.string()).default([]),
-    hasQuestion: z.boolean().default(false),
-    hasAnswer: z.boolean().default(false),
-    hasCTA: z.boolean().default(false),
-    hasStory: z.boolean().default(false),
-    hasInsight: z.boolean().default(false),
-    hasStrongStatement: z.boolean().default(false),
-    emotion: z.string().optional(),
-    sentiment: z.string().optional(),
-  })).default([]),
-});
-
-function extractJson(raw: string) {
-  const trimmed = raw.trim().replace(/^```json\s*/i, "").replace(/\s*```$/, "");
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end <= start) {
-    throw new Error("A IA não retornou a transcrição estruturada esperada.");
-  }
-  return JSON.parse(trimmed.slice(start, end + 1));
-}
-
-function readText(response: any) {
-  if (typeof response?.text === "function") return response.text();
-  if (typeof response?.text === "string") return response.text;
-  return (response?.candidates?.[0]?.content?.parts ?? [])
-    .map((part: any) => (typeof part?.text === "string" ? part.text : ""))
-    .join("\n");
-}
-
-function normalizeTranscript(raw: z.infer<typeof transcriptSchema>, durationSec: number) {
-  const segments: TranscriptSegment[] = raw.segments
-    .filter((segment) => segment.text.trim() && segment.end > segment.start)
-    .map((segment, index) => ({
-      id: segment.id || `seg-${index + 1}-${nanoid(5)}`,
-      start: Math.max(0, Math.min(durationSec, segment.start)),
-      end: Math.max(0, Math.min(durationSec, segment.end)),
-      text: segment.text.trim(),
-      speakerId: segment.speakerId,
-      confidence: segment.confidence,
-      words: segment.words,
-    }))
-    .filter((segment) => segment.end > segment.start)
-    .sort((a, b) => a.start - b.start);
-
-  if (!segments.length) {
-    throw new Error("A IA não encontrou segmentos de fala no vídeo.");
-  }
-
-  const participants: Participant[] = raw.participants.length
-    ? raw.participants
-    : Array.from(new Set(segments.map((segment) => segment.speakerId).filter(Boolean))).map((id) => ({
-        id: id as string,
-        label: id === "p1" ? "Participante 1" : id === "p2" ? "Participante 2" : String(id),
-      }));
-
-  return { language: raw.language || "pt-BR", segments, participants, semanticHints: raw.semanticHints };
-}
+import { convertToOpenAIChunks } from "@/lib/audio-convert";
+import { getServerEnv, requireOpenAIApiKey } from "@/lib/env";
+import { ensureTempDir } from "@/lib/temp-files";
+import type { TranscriptSegment, TranscriptSemanticHint } from "@/types/video";
 
 export async function transcribeVideoStructured(params: {
   audioPath: string;
@@ -106,44 +17,42 @@ export async function transcribeVideoStructured(params: {
   durationSec: number;
 }) {
   const env = getServerEnv();
-  const client = new GoogleGenAI({ apiKey: requireGeminiApiKey() }) as any;
-  let uploadedFile: any = null;
+  const client = new OpenAI({ apiKey: requireOpenAIApiKey(), maxRetries: 0, timeout: 240_000 });
+  const tempDir = await fs.mkdtemp(path.join(await ensureTempDir(), "openai-video-transcribe-"));
 
   try {
-    uploadedFile = await client.files.upload({
-      file: params.audioPath,
-      config: { mimeType: "audio/wav", displayName: "leste-cuts-audio" },
-    });
-    const activeFile = await waitForGeminiFileActive(client, uploadedFile);
-    const fileUri = activeFile?.uri ?? activeFile?.file?.uri;
-    const mimeType = activeFile?.mimeType ?? activeFile?.mime_type ?? "audio/wav";
+    const chunks = await convertToOpenAIChunks(params.audioPath, tempDir);
+    const segments: TranscriptSegment[] = [];
+    const semanticHints: TranscriptSemanticHint[] = [];
+    let offsetSeconds = 0;
+    let language = "pt-BR";
 
-    if (!fileUri) {
-      throw new Error("O Gemini não retornou a URI do áudio.");
+    for (let index = 0; index < chunks.length; index += 1) {
+      const result = await client.audio.transcriptions.create({
+        file: createReadStream(chunks[index]),
+        // shortcut: Whisper timestamps are scheduled for shutdown on 2027-02-26; replace when a supported OpenAI model returns segment times.
+        model: env.openAiTimestampTranscribeModel,
+        response_format: "verbose_json",
+        timestamp_granularities: ["segment"],
+        prompt: `Transcreva em português brasileiro com fidelidade. Preserve nomes e números. Vídeo: ${params.title}`,
+      });
+      language = index === 0 && result.language ? result.language : language;
+      for (const segment of result.segments ?? []) {
+        const start = Math.max(0, Math.min(params.durationSec, offsetSeconds + segment.start));
+        const end = Math.max(0, Math.min(params.durationSec, offsetSeconds + segment.end));
+        if (segment.text.trim() && end > start) {
+          segments.push({ id: `seg-${index + 1}-${segment.id}-${nanoid(4)}`, start, end, text: segment.text.trim(), words: [] });
+        }
+      }
+      offsetSeconds += result.duration;
     }
 
-    const response = await client.models.generateContent({
-      model: env.geminiAudioUnderstandingModel,
-      contents: [{
-        role: "user",
-        parts: [
-          { text: buildVideoTranscriptionPrompt({ title: params.title, durationSec: params.durationSec }) },
-          { fileData: { fileUri, mimeType } },
-        ],
-      }],
-      config: { responseMimeType: "application/json" },
-    });
-
-    const parsed = transcriptSchema.safeParse(extractJson(readText(response)));
-    if (!parsed.success) {
-      throw new Error("A IA retornou uma transcrição com estrutura inválida.");
-    }
-
-    return normalizeTranscript(parsed.data, params.durationSec);
+    if (!segments.length) throw new Error("A OpenAI não retornou segmentos de fala com marcação temporal.");
+    return { language, segments, participants: [], semanticHints };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "erro desconhecido";
-    throw new Error(`Falha ao transcrever o vídeo. ${message}`);
+    const detail = error instanceof Error ? error.message.slice(0, 300) : "erro desconhecido";
+    throw new Error(`Falha ao transcrever vídeo com OpenAI. ${detail}`);
   } finally {
-    await deleteGeminiRemoteFile(client, uploadedFile);
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }

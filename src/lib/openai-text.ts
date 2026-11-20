@@ -8,9 +8,10 @@ type TextTaskParams = {
   system?: string;
   prompt: string;
   temperature?: number;
+  signal?: AbortSignal;
 };
 
-export async function runOpenAITextTask({ system, prompt }: TextTaskParams) {
+export async function runOpenAITextTask({ system, prompt, signal }: TextTaskParams) {
   const client = new OpenAI({
     apiKey: requireOpenAIApiKey(),
     maxRetries: 0,
@@ -21,7 +22,7 @@ export async function runOpenAITextTask({ system, prompt }: TextTaskParams) {
     instructions: system,
     input: prompt,
     reasoning: { effort: "low" },
-  });
+  }, { signal });
   const result = response.output_text?.trim();
 
   if (!result) {

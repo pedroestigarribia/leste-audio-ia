@@ -24,6 +24,8 @@ export async function GET() {
     speechAiProvider: config.speechAiProvider,
     openAiTextModel: config.openAiTextModel,
     openAiTranscribeModel: config.openAiTranscribeModel,
+    openAiTimestampTranscribeModel: config.openAiTimestampTranscribeModel,
+    openAiLiveTranscribeModel: config.openAiLiveTranscribeModel,
     openAiRealtimeTtsModel: config.openAiRealtimeTtsModel,
     openAiTtsVoice: config.openAiTtsVoice,
     deepseekModel: config.deepSeekModel,

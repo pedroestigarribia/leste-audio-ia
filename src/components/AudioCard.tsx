@@ -37,6 +37,7 @@ type AudioCardProps = {
   onExecutePrompt: (prompt: string) => Promise<string>;
   onOrganize: () => void;
   onGenerateAudioContent: (kind: AudioContentKind) => void;
+  onEditStory: (text: string) => void;
   onRemove: () => void;
   onRetry: () => void;
   onSummarize: () => void;
@@ -48,6 +49,7 @@ type AudioCardProps = {
   audioIntelligenceError?: string;
   contentError?: string;
   intentError?: string;
+  storyError?: string;
   organizeError?: string;
   summaryError?: string;
   showRetry?: boolean;
@@ -59,6 +61,7 @@ function SectionBlock({
   copied,
   copyLabel,
   onCopy,
+  onChange,
   voice,
 }: {
   title: string;
@@ -66,6 +69,7 @@ function SectionBlock({
   copied: boolean;
   copyLabel: string;
   onCopy: () => void;
+  onChange?: (text: string) => void;
   voice?: {
     audioUrl?: string;
     error?: string;
@@ -101,8 +105,10 @@ function SectionBlock({
         </div>
       </div>
       <textarea
+        aria-label={title}
         className="min-h-[160px] w-full rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-800 outline-none focus:border-leste-blue"
-        readOnly
+        onChange={onChange ? (event) => onChange(event.currentTarget.value) : undefined}
+        readOnly={!onChange}
         value={value}
       />
       {voice?.error ? <ErrorBox message={voice.error} /> : null}
@@ -310,6 +316,7 @@ export default function AudioCard({
   onExecutePrompt,
   onOrganize,
   onGenerateAudioContent,
+  onEditStory,
   onRemove,
   onRetry,
   onSummarize,
@@ -321,6 +328,7 @@ export default function AudioCard({
   audioIntelligenceError,
   contentError,
   intentError,
+  storyError,
   organizeError,
   summaryError,
   showRetry = false,
@@ -416,6 +424,10 @@ export default function AudioCard({
               <Sparkles className="h-4 w-4" />
               Organizar este áudio
             </ActionButton>
+            <ActionButton disabled={!item.audioIntelligence} fullWidth loading={loadingAudioContentKind === "storytelling"} onClick={() => onGenerateAudioContent("storytelling")} type="button" variant="ghost" title={!item.audioIntelligence ? "Aguarde ou execute a análise deste áudio." : undefined}>
+              <Sparkles className="h-4 w-4" />
+              Criar história deste áudio
+            </ActionButton>
             <ActionButton fullWidth onClick={onCopyAll} type="button" variant="ghost">
               <Copy className="h-4 w-4" />
               {copiedKey === `audio:${item.id}` ? "Copiado" : "Copiar conteúdo deste áudio"}
@@ -430,6 +442,7 @@ export default function AudioCard({
               Transcrição concluída. A IA está gerando automaticamente resumo, organização, interpretação e intenção deste áudio.
             </p>
           ) : null}
+          {!item.audioIntelligence ? <p className="text-xs text-slate-600">Para criar a história deste áudio, aguarde a análise automática ou use a análise nas ferramentas extras.</p> : null}
         </div>
       ) : null}
 
@@ -511,6 +524,17 @@ export default function AudioCard({
             onSpeak: () => onSpeakAdvanced(`advanced:${item.id}:organized`, `Conteúdo organizado de ${item.name}`, item.organizedText!),
             onStop: onStopSpeech,
           }}
+        />
+      ) : null}
+      {storyError ? <ErrorBox message={storyError} /> : null}
+      {item.generatedContents?.storytelling !== undefined ? (
+        <SectionBlock
+          copied={copiedKey === `storytelling:${item.id}`}
+          copyLabel="Copiar história"
+          onCopy={() => onCopy(`storytelling:${item.id}`, item.generatedContents!.storytelling!)}
+          onChange={onEditStory}
+          title="História deste áudio"
+          value={item.generatedContents.storytelling}
         />
       ) : null}
       {intentError ? <ErrorBox message={intentError} /> : null}

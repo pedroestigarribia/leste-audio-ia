@@ -11,7 +11,6 @@ export async function synthesizeSpeechWithOpenAI(prompt: string): Promise<Buffer
     {
       headers: {
         Authorization: `Bearer ${requireOpenAIApiKey()}`,
-        "OpenAI-Beta": "realtime=v1",
       },
     },
   );
@@ -19,7 +18,11 @@ export async function synthesizeSpeechWithOpenAI(prompt: string): Promise<Buffer
   return new Promise((resolve, reject) => {
     const audio: Buffer[] = [];
     let settled = false;
-    const timeout = setTimeout(() => finish(new Error("Tempo limite excedido ao gerar a voz.")), 180_000);
+    let lastEventType = "conectando";
+    const timeout = setTimeout(
+      () => finish(new Error(`Tempo limite excedido ao gerar a voz (último evento: ${lastEventType}).`)),
+      180_000,
+    );
 
     function finish(error?: Error) {
       if (settled) return;
@@ -30,17 +33,6 @@ export async function synthesizeSpeechWithOpenAI(prompt: string): Promise<Buffer
       if (error) reject(error);
       else resolve(Buffer.concat(audio));
     }
-
-    socket.once("open", () => {
-      socket.send(JSON.stringify({
-        type: "session.update",
-        session: {
-          type: "realtime",
-          output_modalities: ["audio"],
-          audio: { output: { format: { type: "audio/pcm", rate: 24_000 }, voice: env.openAiTtsVoice } },
-        },
-      }));
-    });
 
     socket.on("message", (data) => {
       let event: {
@@ -55,9 +47,19 @@ export async function synthesizeSpeechWithOpenAI(prompt: string): Promise<Buffer
         finish(new Error("A OpenAI retornou um evento de voz inválido."));
         return;
       }
+      lastEventType = event.type ?? "evento sem tipo";
 
       if (event.type === "error") {
         finish(new Error(event.error?.message || "A OpenAI recusou a geração de voz."));
+      } else if (event.type === "session.created") {
+        socket.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            type: "realtime",
+            output_modalities: ["audio"],
+            audio: { output: { format: { type: "audio/pcm", rate: 24_000 }, voice: env.openAiTtsVoice } },
+          },
+        }));
       } else if (event.type === "session.updated") {
         socket.send(JSON.stringify({
           type: "response.create",

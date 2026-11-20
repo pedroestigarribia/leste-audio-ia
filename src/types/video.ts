@@ -34,6 +34,20 @@ export type TranscriptSegment = {
   words: TranscriptWord[];
 };
 
+export type TranscriptSemanticHint = {
+  segmentId: string;
+  topic?: string;
+  subtopics?: string[];
+  sentiment?: string;
+  emotion?: string;
+  hasQuestion?: boolean;
+  hasAnswer?: boolean;
+  hasCTA?: boolean;
+  hasStory?: boolean;
+  hasInsight?: boolean;
+  hasStrongStatement?: boolean;
+};
+
 export type Participant = {
   id: string;
   label: string;

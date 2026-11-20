@@ -15,6 +15,10 @@ export type PdfResultKey = "analysis" | "summary" | "interpretation" | "organize
 export type SavedAudioItem = {
   id: string;
   name: string;
+  originalFileName?: string;
+  originalLastModified?: number;
+  sourceUrl?: string;
+  sourcePlatform?: "instagram" | "youtube";
   size: number;
   type: string;
   extension: string;
