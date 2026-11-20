@@ -1,8 +1,8 @@
 import "server-only";
 
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 
-import { MissingApiKeyError, getServerEnv, requireGeminiApiKey } from "@/lib/env";
+import { getServerEnv, requireOpenAIApiKey } from "@/lib/env";
 import { normalizePlainText } from "@/lib/plain-text";
 
 export const ALLOWED_IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp"] as const;
@@ -15,28 +15,6 @@ type ExtractTextFromImageParams = {
   originalName: string;
 };
 
-function extractTextFromGeminiResponse(response: any): string {
-  if (!response) {
-    return "";
-  }
-
-  if (typeof response.text === "string") {
-    return response.text;
-  }
-
-  if (typeof response.text === "function") {
-    return response.text();
-  }
-
-  const parts = response.candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? [];
-
-  return parts
-    .map((part: any) => (typeof part?.text === "string" ? part.text : ""))
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-}
-
 export function getImageExtension(filename: string) {
   const extension = filename.toLowerCase().split(".").pop() ?? "";
   return extension.replace(/[^a-z0-9]/g, "");
@@ -48,66 +26,45 @@ export function isAllowedImage(extension: string, mimeType?: string) {
     extension as (typeof ALLOWED_IMAGE_EXTENSIONS)[number],
   );
 
-  if (!normalizedMimeType) {
-    return hasAllowedExtension;
-  }
-
+  if (!normalizedMimeType) return hasAllowedExtension;
   return hasAllowedExtension && ALLOWED_IMAGE_MIME_TYPES.has(normalizedMimeType);
 }
 
-export async function extractTextFromImageWithGemini({
+export async function extractTextFromImageWithOpenAI({
   buffer,
   mimeType,
   originalName,
 }: ExtractTextFromImageParams) {
-  const env = getServerEnv();
-  const apiKey = requireGeminiApiKey();
-  const client = new GoogleGenAI({ apiKey }) as any;
+  const client = new OpenAI({ apiKey: requireOpenAIApiKey(), maxRetries: 0, timeout: 120_000 });
 
   try {
-    const response = await client.models.generateContent({
-      model: env.geminiTextModel,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              text: `Extraia e organize em português brasileiro todo texto visível nesta imagem.
+    const response = await client.responses.create({
+      model: getServerEnv().openAiTextModel,
+      instructions: `Extraia e organize em português brasileiro todo texto visível nesta imagem.
 
 Regras:
 - Se houver texto, transcreva com fidelidade.
-- Preserve nomes, datas, valores, telefones, e-mails, enderecos e links.
+- Preserve nomes, datas, valores, telefones, e-mails, endereços e links.
 - Não invente informações que não estejam visíveis.
 - Se não houver texto suficiente, descreva objetivamente o conteúdo relevante da imagem.
-- Nao use markdown com ** ou ##.
+- Não use markdown com ** ou ##.
 - Entregue apenas texto limpo, organizado e pronto para copiar.
 
 Arquivo: ${originalName}`,
-            },
-            {
-              inlineData: {
-                mimeType,
-                data: buffer.toString("base64"),
-              },
-            },
-          ],
-        },
-      ],
+      input: [{
+        role: "user",
+        content: [
+          { type: "input_text", text: `Leia a imagem anexada: ${originalName}` },
+          { type: "input_image", image_url: `data:${mimeType};base64,${buffer.toString("base64")}`, detail: "auto" },
+        ],
+      }],
     });
 
-    const text = normalizePlainText(extractTextFromGeminiResponse(response));
-
-    if (!text) {
-      throw new Error("A IA não retornou texto para esta imagem.");
-    }
-
+    const text = normalizePlainText(response.output_text ?? "");
+    if (!text) throw new Error("A IA não retornou texto para esta imagem.");
     return text;
   } catch (error) {
-    if (error instanceof MissingApiKeyError) {
-      throw error;
-    }
-
     const message = error instanceof Error ? error.message : "Erro desconhecido.";
-    throw new Error(`Falha ao gerar texto da imagem. ${message}`);
+    throw new Error(`Falha ao gerar texto da imagem com OpenAI. ${message}`);
   }
 }

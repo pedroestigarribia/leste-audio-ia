@@ -158,6 +158,8 @@ export type AskFilesAnswer = {
 export type AudioItem = {
   id: string;
   file: File;
+  originalFileName?: string;
+  originalLastModified?: number;
   sourceUrl?: string;
   sourcePlatform?: "instagram" | "youtube";
   /** False when restoring a local project without persisting the original audio. */

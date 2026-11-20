@@ -13,10 +13,9 @@ Rodar primeiro em `localhost`, processar múltiplos áudios enviados manualmente
 - Tailwind CSS
 - Route Handlers do Next.js
 - Node.js runtime
-- Gemini e OpenAI configuráveis para transcrição de áudio
-- Gemini, OpenAI e DeepSeek configuráveis para processamento de texto
-- Gemini e OpenAI Realtime configuráveis para leitura com voz da Milena
-- Gemini para entendimento multimodal direto de áudio/imagem quando esse provedor estiver selecionado
+- OpenAI para transcrição de áudio, processamento de texto, leitura da Milena, extração de texto de imagens e análise de vídeo
+- Ditado OpenAI ao vivo via Realtime/WebRTC, mantendo gravação completa em memória como contingência
+- Adaptadores Gemini e DeepSeek mantidos no código legado, mas não usados pelo roteador ativo
 - `ffmpeg-static` com fallback para FFmpeg do sistema
 - IndexedDB nativo do navegador para projetos locais explicitamente salvos, sem persistir mídia original
 - `fflate` para empacotar capítulos MP3 e roteiro em ZIP, sem enviar os áudios gerados ao servidor
@@ -116,29 +115,13 @@ cp .env.example .env.local
 2. Preencha as chaves:
 
 ```env
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-3.7-flash
-GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe
-GEMINI_AUDIO_UNDERSTANDING_MODEL=gemini-3.8-flash
-GEMINI_TEXT_MODEL=gemini-3.8-flash
-GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview
-GEMINI_TTS_AUDIOBOOK_MODEL=gemini-2.5-pro-preview-tts
-GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
-GEMINI_LIVE_TRANSCRIBE_MODEL=gemini-3.5-transcribe-live
-GEMINI_TTS_VOICE=Kore
-TEXT_AI_PROVIDER=openai
-
-DEEPSEEK_API_KEY=
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-pro
-
 OPENAI_API_KEY=
 OPENAI_TEXT_MODEL=gpt-6-luna
 OPENAI_TRANSCRIBE_MODEL=gpt-transcribe
+OPENAI_TIMESTAMP_TRANSCRIBE_MODEL=whisper-1
+OPENAI_LIVE_TRANSCRIBE_MODEL=gpt-live-transcribe
 OPENAI_REALTIME_TTS_MODEL=gpt-realtime-2.1-mini
 OPENAI_TTS_VOICE=marin
-AUDIO_AI_PROVIDER=openai
-SPEECH_AI_PROVIDER=openai
 
 MAX_PARALLEL_TRANSCRIPTIONS=3
 MAX_FILE_SIZE_MB=125
@@ -157,12 +140,7 @@ TEMP_UPLOAD_DIR=./tmp/uploads
 APP_NAME=Leste Audio IA
 ```
 
-Os provedores de áudio e texto são independentes. `AUDIO_AI_PROVIDER` escolhe a transcrição, `SPEECH_AI_PROVIDER` escolhe a voz e `TEXT_AI_PROVIDER` escolhe resumo, organização e interpretação. Cada fluxo usa somente o provedor selecionado; uma falha não envia o mesmo conteúdo automaticamente a outro serviço.
-
-Se `TEXT_AI_PROVIDER=deepseek`, as rotas de texto usam a DeepSeek e exigem
-`DEEPSEEK_API_KEY`. Com `TEXT_AI_PROVIDER=gemini`, usam somente
-`GEMINI_API_KEY`; com `TEXT_AI_PROVIDER=openai`, usam somente `OPENAI_API_KEY`.
-Transcrição OpenAI e voz OpenAI também exigem `OPENAI_API_KEY`.
+O roteador ativo usa OpenAI para texto, arquivos de áudio, ditado ao vivo, leitura de voz, imagens e análise de transcrições de vídeo. Variáveis antigas de Gemini/DeepSeek podem permanecer em `.env.local` por compatibilidade, mas a configuração ativa não as seleciona e não há fallback automático para esses provedores.
 
 A interface não cai por causa disso. Ela mostra a mensagem:
 
@@ -170,34 +148,18 @@ A interface não cai por causa disso. Ela mostra a mensagem:
 
 Para OpenAI, a mensagem identifica a variável ausente: `Configure OPENAI_API_KEY no arquivo .env.local`.
 
-## Como obter e configurar a Gemini API key
+## Provedores legados
 
-1. Gere uma chave no painel da Gemini API / Google AI Studio.
-2. Cole a chave em `GEMINI_API_KEY`.
-3. Use `GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe` para a transcrição dedicada, com modo inteligente em português brasileiro.
-4. Use `GEMINI_AUDIO_UNDERSTANDING_MODEL=gemini-3.8-flash` para entendimento multimodal de áudio e vídeo.
-5. Use `GEMINI_TEXT_MODEL=gemini-3.8-flash` para resumo, organização, interpretação, prompts, PDF e demais tarefas textuais.
-6. Use `GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview` para leituras comuns da Milena.
-7. Use `GEMINI_TTS_AUDIOBOOK_MODEL=gemini-2.5-pro-preview-tts` para audiobook e narrações longas.
-8. `GEMINI_LIVE_TRANSCRIBE_MODEL=gemini-3.5-transcribe-live` usa reconhecimento contínuo na área de escuta; `GEMINI_LIVE_MODEL` continua reservado para conversação de voz bidirecional futura.
-9. `GEMINI_TTS_VOICE=Kore` seleciona a voz predefinida usada pela Milena.
-
-## Como obter e configurar a DeepSeek API key
-
-1. Gere uma chave no painel da DeepSeek.
-2. Cole a chave em `DEEPSEEK_API_KEY`.
-3. Mantenha:
-   - `DEEPSEEK_BASE_URL=https://api.deepseek.com`
-   - `DEEPSEEK_MODEL=deepseek-v4-pro`
+Os módulos e variáveis de Gemini/DeepSeek foram mantidos para preservar compatibilidade do código e de ambientes existentes. Eles não são necessários para iniciar o app no modo atual. Não remova chaves antigas de um `.env.local` existente sem antes revisar o arquivo manualmente; esta migração não altera esse arquivo.
 
 ## Como configurar a OpenAI API
 
 1. Crie uma chave de projeto pela página oficial da OpenAI Platform e mantenha-a somente no servidor.
 2. Preencha `OPENAI_API_KEY` no `.env.local` (localhost) ou no gerenciador de variáveis da hospedagem. Nunca use prefixo `NEXT_PUBLIC_`.
-3. Para usar OpenAI nos fluxos correspondentes, configure `AUDIO_AI_PROVIDER=openai`, `SPEECH_AI_PROVIDER=openai` e `TEXT_AI_PROVIDER=openai`. As chaves Gemini e DeepSeek continuam disponíveis ao selecionar seus respectivos provedores.
-4. Modelos padrão: `OPENAI_TRANSCRIBE_MODEL=gpt-transcribe`, `OPENAI_REALTIME_TTS_MODEL=gpt-realtime-2.1-mini` e `OPENAI_TEXT_MODEL=gpt-6-luna`. São substituíveis por ambiente.
+3. Os fluxos ativos usam OpenAI; não configure seleção de provedor para habilitar Gemini/DeepSeek.
+4. Modelos padrão: `OPENAI_TRANSCRIBE_MODEL=gpt-transcribe`, `OPENAI_LIVE_TRANSCRIBE_MODEL=gpt-live-transcribe`, `OPENAI_REALTIME_TTS_MODEL=gpt-realtime-2.1-mini` e `OPENAI_TEXT_MODEL=gpt-6-luna`. São substituíveis por ambiente.
 5. O endpoint de transcrição recebe áudio já gravado. O servidor converte a faixa para MP3 mono de 16 kHz e divide em partes sequenciais de 10 minutos, envia todas as partes e reúne o texto na ordem. Isso atende ao limite oficial de 25 MB por arquivo da API, sem truncar o restante do áudio.
-6. A gravação de microfone com OpenAI não mostra texto parcial ao vivo: ela grava no navegador e só envia o arquivo para transcrição depois que o usuário para. A escuta/transcrição em tempo real existente permanece disponível quando Gemini está selecionado.
+6. O `Flow Leste · ditado inteligente` mostra deltas e trechos finais do reconhecimento ao vivo via WebRTC. A gravação completa também fica na memória da página; se Live falhar, ela é enviada para a transcrição de arquivo ao parar. Não é salvo áudio em IndexedDB.
 7. Para links do YouTube/Instagram, o app continua usando o extrator já existente para obter a mídia temporária. OpenAI não baixa esses vídeos; se a extração falhar, envie o arquivo manualmente.
 8. A voz predefinida `marin` é chamada de “Milena” na interface, mas não é clonagem nem uma voz personalizada. A OpenAI informa que as vozes são otimizadas para inglês, embora aceitem português; confira a pronúncia em português brasileiro. A interface deve deixar claro que a voz é gerada por IA.
 9. Áudio e texto são enviados ao provedor selecionado para processamento. O app remove os arquivos temporários locais após a tarefa; os dados enviados ficam sujeitos aos controles e à política de dados da conta API do provedor.
@@ -206,24 +168,11 @@ Referências oficiais: [transcrição de arquivos](https://developers.openai.com
 
 ## Modelos usados
 
-- `GEMINI_TRANSCRIBE_MODEL=gemini-3.5-transcribe` para transcrição dedicada
-- `GEMINI_AUDIO_UNDERSTANDING_MODEL=gemini-3.8-flash` para entendimento de áudio e vídeo
-- `GEMINI_TEXT_MODEL=gemini-3.8-flash` para texto e multimodalidade textual
-- `GEMINI_MODEL=gemini-3.7-flash` como contingência para a rota legada de transcrição
-- `GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview` para voz rápida
-- `GEMINI_TTS_AUDIOBOOK_MODEL=gemini-2.5-pro-preview-tts` para audiobook
-- `GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview` para futura conversação em tempo real
-- `GEMINI_LIVE_TRANSCRIBE_MODEL=gemini-3.5-transcribe-live` para transcrição ao vivo, independente da configuração de conversação
-- `TEXT_AI_PROVIDER=gemini` para deixar Gemini como provedor textual padrão
-- `OPENAI_TRANSCRIBE_MODEL=gpt-transcribe` para áudio gravado
-- `OPENAI_REALTIME_TTS_MODEL=gpt-realtime-2.1-mini` para geração de fala por Realtime
-- `OPENAI_TEXT_MODEL=gpt-6-luna` para as tarefas de texto
-- `AUDIO_AI_PROVIDER`, `SPEECH_AI_PROVIDER` e `TEXT_AI_PROVIDER` para selecionar provedores sem fallback cruzado
-- `DEEPSEEK_MODEL=deepseek-v4-pro`
-
-Os identificadores acima seguem a documentação atual do Gemini. A rota de
-transcrição usa a Interactions API com `store: false`, para não manter a sessão
-ou o texto no serviço, e remove o arquivo remoto ao concluir.
+- `OPENAI_TEXT_MODEL=gpt-6-luna` para tarefas textuais.
+- `OPENAI_TRANSCRIBE_MODEL=gpt-transcribe` para arquivos de áudio.
+- `OPENAI_LIVE_TRANSCRIBE_MODEL=gpt-live-transcribe` para ditado em tempo real.
+- `OPENAI_REALTIME_TTS_MODEL=gpt-realtime-2.1-mini` e `OPENAI_TTS_VOICE=marin` para narração sintética da Milena.
+- `OPENAI_TIMESTAMP_TRANSCRIBE_MODEL=whisper-1` para os segmentos temporais do YouTube/cortes enquanto a API não oferece timestamps equivalentes no fluxo recomendado de arquivos. É legado, com encerramento anunciado para 26/02/2027; planejar substituição antes dessa data.
 
 ## Como rodar em localhost
 
@@ -336,8 +285,8 @@ Domínio:
 4. A fila processa no máximo `MAX_PARALLEL_TRANSCRIPTIONS`.
 5. A rota `/api/transcribe` recebe um arquivo por requisição.
 6. O backend salva temporariamente o arquivo.
-7. Tenta transcrever com Gemini.
-8. Se falhar em formato problemático, converte para WAV mono 16 kHz e tenta de novo.
+7. Converte a faixa de áudio em partes temporárias sequenciais e transcreve todas com `gpt-transcribe`.
+8. Reúne as partes na ordem original; nenhum trecho é descartado silenciosamente.
 9. O backend limpa os temporários no `finally`.
 10. Após uma transcrição concluída, o app gera automaticamente o resumo, a interpretação do arquivo original e a identificação de assunto, contexto e intenção. Falhas em uma dessas análises não removem a transcrição nem bloqueiam os outros itens.
 11. A geração de voz nunca é automática: em cada resumo, interpretação, texto organizado ou conteúdo derivado, o usuário escolhe `Transformar em áudio` antes de criar o MP3 com a Milena.
@@ -345,7 +294,7 @@ Domínio:
 13. O usuário pode continuar adicionando mais 10 áudios ou mais sem perder os arquivos já listados.
 14. O painel geral permite ouvir os áudios enquanto organiza e analisa o conteúdo.
 13. A área de texto livre permite colar conteúdo, gerar voz da Milena e baixar MP3.
-14. A área de imagem envia a imagem ao backend, usa Gemini para gerar texto e permite copiar, ouvir e baixar a leitura.
+14. A área de imagem envia a imagem ao backend, usa OpenAI para extrair texto e permite copiar, ouvir e baixar a leitura.
 15. Após extrair um PDF ou DOCX, o app gera em paralelo a identificação do tipo de documento, a análise, o resumo e a interpretação. Contratos recebem atenção adicional para partes, vigência, obrigações, valores, condições, riscos e ambiguidades, sem substituir avaliação jurídica profissional.
 16. PDFs com texto pesquisável e arquivos DOCX são divididos em capítulos para audiobook. A geração ocorre em fila, um capítulo por vez, para evitar uma requisição longa e permitir retomar apenas o capítulo que falhar.
 17. Em cada áudio transcrito, a análise automática identifica assunto, contexto, intenção, temas, insights, tarefas, decisões, dados-chave, riscos, oportunidades e estrutura narrativa a partir do arquivo original.
@@ -357,36 +306,37 @@ Domínio:
 ## Escuta ao vivo e interpretação da voz
 
 1. No painel de processamento, clique em `Começar a ouvir`, permita o microfone e fale. O botão `Gravar áudio` anterior continua disponível para quem prefere processar somente após parar.
-2. A fala é capturada como PCM mono de 16 kHz por AudioWorklet e enviada diretamente ao Gemini Live por WebSocket. A interface separa texto provisório de trechos confirmados. O MediaRecorder conserva uma cópia somente em memória durante a escuta para o fallback de transcrição de arquivo.
+2. O navegador solicita um token efêmero no backend e conecta à Realtime API da OpenAI via WebRTC. O texto parcial e os segmentos finais aparecem durante a fala. O MediaRecorder mantém a gravação completa apenas em memória para reprocessar o arquivo caso a conexão Live falhe.
 3. A cada trecho confirmado, com pausa de 2 segundos entre chamadas, `/api/voice-interpret` atualiza intenção, domínio, requisitos, exclusões, correções e texto normalizado. O modo pode ser Automático, Transcrição fiel, Texto limpo, Interpretação, Prompt, Especificação técnica, Codex, Claude, ChatGPT, Documento, WhatsApp ou Briefing criativo. A saída é editável, copiável e exportável em TXT/DOCX.
 4. Para reaproveitar arquivos já enviados, escolha uma transcrição em `Analisar áudio já transcrito`. Ela usa o mesmo interpretador sem reenviar o arquivo de áudio. Mudanças de modo reinterpretam o texto completo. O vocabulário personalizado (até 50 termos) é aplicado às novas sessões Live.
-5. Ao clicar em `Parar e processar`, uma transcrição Live concluída entra na lista existente e recebe resumo, organização, intenção e análise automática. Se não houver trechos finais ou ocorrer erro de WebSocket, a gravação inteira segue para `/api/transcribe` e nenhum trecho parcial é tratado como final. Quando o fallback também falha, o erro é mostrado e a gravação não é persistida.
+5. Ao clicar em `Parar e processar`, uma transcrição Live concluída entra na lista existente e recebe resumo, organização, intenção e análise automática. Se não houver trechos finais ou ocorrer erro WebRTC, a gravação inteira segue para `/api/transcribe`; nenhum trecho parcial é tratado como final. A conexão não tenta reconectar automaticamente para evitar lacunas ou duplicação; preserva o áudio inteiro e usa o fallback de arquivo.
 
-O servidor emite apenas um token Live de uso único e curto prazo em `POST /api/live-transcribe-token`, restrito ao modelo e à configuração de transcrição. A chave permanente continua em `.env.local`/ambiente de produção. O endpoint limita novas sessões por IP (limite em memória do processo); sem autenticação, isso não substitui rate limiting externo e controle de custos na hospedagem. O navegador precisa de HTTPS em produção para abrir o microfone, e o ambiente deve permitir WebSocket de saída para a API do Google. A sessão Live do modelo dura até 10 minutos; em caso de desconexão, a gravação continua localmente para o fallback. O Live não fornece diarização nem timestamps por palavra; a análise posterior do arquivo pode adicionar informações quando disponíveis.
+O servidor emite apenas um segredo efêmero de curto prazo em `POST /api/live-transcribe-token`, restrito à configuração de transcrição. A chave permanente continua no backend. O endpoint limita novas sessões por IP (limite em memória do processo); sem autenticação, isso não substitui rate limiting externo e controle de custos na hospedagem. O navegador precisa de HTTPS em produção e conexão de saída para a API Realtime da OpenAI. Se houver falha de conexão, a interface encerra o Live e conserva a gravação para fallback; não há reconexão automática nesta versão. `gpt-live-transcribe` não retorna diarização nem timestamps por palavra.
 
-O processamento semântico usa `TEXT_AI_PROVIDER` e o modelo textual já configurado. Texto original não é sobrescrito por normalização; resultados de IA, inferências e correções devem ser revisados antes do uso. A transcrição salva em um projeto local entra como áudio textual, mas o resultado editável do painel de voz, isoladamente, deve ser copiado/exportado antes de sair da página.
+O processamento semântico usa `gpt-6-luna`. Texto original não é sobrescrito por normalização; resultados de IA, inferências e correções devem ser revisados antes do uso. A transcrição salva em um projeto local entra como áudio textual, mas o resultado editável do painel de voz, isoladamente, deve ser copiado/exportado antes de sair da página.
 
-Teste automatizado sem áudio: `npm run test:voice` (inclui token e handshake WebSocket). Teste real, com custo de API: `npm run test:voice:audio` (gera um MP3 sintético curto, testa TTS, transcrição de arquivo e transcrição Live; exige Node com WebSocket nativo). A transcrição sintética não é gravada em histórico. O teste de microfone físico e permissão deve ser feito manualmente no navegador.
+Teste de token Live: `npm run test:voice`. Teste real, com custo de API: `npm run test:voice:audio` (gera MP3 sintético curto, testa TTS, decodificação FFmpeg, transcrição de arquivo, resumo, rota compatível de análise de áudio, extração multimodal de imagem e emissão de token). Esse teste não exercita handshake WebRTC nem usa microfone. O teste de microfone físico e conexão Live no navegador deve ser feito manualmente.
 
-Referências: [transcrição Live](https://ai.google.dev/gemini-api/docs/live-api/live-transcribe), [tokens temporários](https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens) e [referência da Live API](https://ai.google.dev/api/live). A API HTTP validada com a chave deste ambiente aceita `bidiGenerateContentSetup` na emissão do token; o WebSocket usa `BidiGenerateContentConstrained`.
+Referências: [transcrição Realtime](https://developers.openai.com/api/docs/guides/realtime-transcription), [client secrets](https://developers.openai.com/api/reference/resources/realtime/subresources/client_secrets/methods/create) e [WebRTC Realtime](https://developers.openai.com/api/docs/guides/voice-webrtc).
 
 ## Processamento temporário e privacidade
 
 - Não salva áudio em banco.
 - Não salva áudio em storage permanente.
-- Não cria histórico na nuvem nem exige login. O painel `Projetos neste computador` salva projetos nomeados no IndexedDB do navegador, no dispositivo e na mesma origem (`localhost` e porta usados para abrir o app). Salve/atualize o projeto depois das alterações para retomá-lo.
+- Não cria histórico na nuvem nem exige login. O painel `Projetos neste computador` salva projetos nomeados no IndexedDB do navegador, no dispositivo e na mesma origem (`localhost` e porta usados para abrir o app). Salve/atualize projetos nomeados para conservar versões separadas.
+- A sessão atual também é salva automaticamente como recuperação local, alguns instantes após alterações. Ao reabrir o app na mesma origem e navegador, escolha `Retomar sessão` ou `Nova sessão, guardar anterior` antes de continuar; a segunda opção preserva a recuperação anterior como projeto local. Essa recuperação é única por origem, por isso evite editar sessões diferentes em várias abas simultaneamente. O armazenamento do navegador pode ser apagado pelo usuário ou pelo próprio navegador; use backup para conservação durável.
 - O armazenamento local inclui transcrições, textos extraídos, análises, memória editorial, tarefas, aprovações, versões anteriores, seleção de capítulos e configurações de narração. Não inclui áudios, PDFs, DOCX ou imagens originais, nem MP3s gerados.
 - É possível exportar um backup `.leste.json` e importá-lo em outro navegador/computador. Guarde o backup com segurança: ele pode conter transcrições e informações pessoais. Projetos locais podem ser pesquisados, abertos e apagados no painel.
-- Ao reabrir um projeto, transcrições e resultados continuam disponíveis; para ouvir ou retranscrever, envie os áudios originais novamente. A geração de voz também precisa ser refeita porque MP3s ficam apenas na sessão atual.
-- `Limpar tudo` limpa a sessão aberta, mas não apaga projetos locais salvos. Para remover um projeto persistente, use `Apagar projeto` no painel.
+- Ao reabrir um projeto, transcrições e resultados continuam disponíveis. Selecione novamente os arquivos originais para ouvir ou retomar os pendentes: o app propõe a associação pelo nome, tamanho e data quando disponível, sem retranscrever os concluídos. Metadados iguais não comprovam conteúdo idêntico; confira os arquivos e decida se possíveis duplicados devem ser adicionados. Gravações feitas no microfone devem ser baixadas antes de fechar a página se forem necessárias depois.
+- `Limpar tudo` limpa a sessão aberta e sua recuperação automática, mas não apaga projetos nomeados. Para remover um projeto persistente, use `Apagar projeto` no painel.
 - Não usa `localStorage`.
-- Usa `IndexedDB` somente para os projetos locais explicitamente salvos; não armazena arquivos de áudio nesse banco.
+- Usa `IndexedDB` para a recuperação automática e os projetos locais salvos; não armazena arquivos de áudio nesse banco. Os textos ficam acessíveis a quem usar esse perfil de navegador: proteja o computador e os backups.
 - O backend usa `tmp/uploads` apenas durante o processamento.
 - O arquivo original e o arquivo convertido são apagados no `finally`.
 - Um vídeo usado em `Cortes Inteligentes` fica em `tmp/cuts/<jobId>` apenas até o job ser removido ou expirar; isso permite revisar e renderizar cortes sem reenviar o original.
 - Em erro, a limpeza também é tentada.
-- A transcrição dedicada e a análise multimodal usam `store: false` na Interactions API.
-- O arquivo remoto enviado ao Gemini é removido ao fim de cada operação, inclusive em falha.
+- O áudio Live trafega por sessão Realtime com credencial efêmera; o arquivo gravado fica apenas em memória no navegador e, no fallback, em temporários locais do servidor.
+- A OpenAI recebe os dados enviados para executar a operação; consulte as configurações e políticas de dados da sua conta API.
 - Não existe log da transcrição completa por padrão.
 - As chaves ficam no backend.
 
@@ -409,6 +359,8 @@ Se ambos falharem, a API retorna erro claro orientando a verificar o FFmpeg.
 
 `GET /api/health`
 
+Os campos `textAiProvider`, `audioAiProvider` e `speechAiProvider` indicam os provedores ativos. Campos `gemini*` e `deepseekModel` permanecem na resposta por compatibilidade e não representam tráfego ativo de IA.
+
 Resposta:
 
 ```json
@@ -423,8 +375,13 @@ Resposta:
   "geminiAudiobookTtsModel": "gemini-2.5-pro-preview-tts",
   "geminiLiveModel": "gemini-3.1-flash-live-preview",
   "geminiLiveTranscribeModel": "gemini-3.5-transcribe-live",
-  "textAiProvider": "gemini",
-  "deepseekModel": "deepseek-v4-pro"
+  "textAiProvider": "openai",
+  "audioAiProvider": "openai",
+  "speechAiProvider": "openai",
+  "openAiTextModel": "gpt-6-luna",
+  "openAiTranscribeModel": "gpt-transcribe",
+  "openAiLiveTranscribeModel": "gpt-live-transcribe",
+  "openAiRealtimeTtsModel": "gpt-realtime-2.1-mini"
 }
 ```
 
@@ -439,7 +396,7 @@ Resposta:
 ### `POST /api/transcribe-url`
 
 - Entrada JSON: `{ "url": "https://..." }`; aceita links diretos HTTPS de vídeos do YouTube e publicações/Reels do Instagram, um por requisição.
-- Valida host e formato do link, consulta disponibilidade e usa duração dos metadados quando fornecida. Depois da extração, confirma a duração real com FFprobe; limita a mídia por `MAX_VIDEO_UPLOAD_MB` e `MAX_VIDEO_DURATION_SEC`, baixa somente a faixa de áudio para uma pasta temporária, transcreve com Gemini e remove a pasta no `finally`.
+- Valida host e formato do link, consulta disponibilidade e usa duração dos metadados quando fornecida. Depois da extração, confirma a duração real com FFprobe; limita a mídia por `MAX_VIDEO_UPLOAD_MB` e `MAX_VIDEO_DURATION_SEC`, baixa somente a faixa de áudio para uma pasta temporária, transcreve com OpenAI e remove a pasta no `finally`.
 - A transcrição entra na mesma fila e recebe automaticamente resumo, organização, interpretação e identificação de intenção dos arquivos enviados.
 - Não usa cookies, credenciais ou sessão do navegador. Conteúdo privado, bloqueado, indisponível ou com login obrigatório retorna erro individual; envie um arquivo de mídia autorizado como alternativa.
 - Alternativa oficial para YouTube: a YouTube Data API exige OAuth para listar legendas e a operação `captions.download` exige permissão para editar o vídeo. Portanto, ela não oferece transcrição sem login para qualquer vídeo público; este app não pede OAuth nesta versão.
@@ -460,8 +417,9 @@ Resposta:
 ### `POST /api/audio-analyze`
 
 - Entrada: `multipart/form-data`, campo `file`
-- Analisa o arquivo original com `gemini-3.8-flash`: assunto, contexto, intenção, temas, insights, tarefas, decisões, dados-chave, riscos, oportunidades e estrutura narrativa
-- Retorna JSON estruturado, sem salvar histórico e com `store: false`
+- Rota de compatibilidade que transcreve o arquivo com `gpt-transcribe` e analisa o texto com o modelo textual OpenAI.
+- A interface atual chama `/api/audio-analyze-text` depois da transcrição para evitar enviar e cobrar o mesmo áudio novamente.
+- Retorna o mesmo objeto JSON estruturado usado na análise de transcrições; temporários são removidos no `finally`.
 
 ### `POST /api/audio-content`
 
@@ -542,7 +500,7 @@ Entrada:
 }
 ```
 
-Retorna áudio para a leitura com voz da Milena. O app entrega `audio/mpeg` em MP3 ou WAV, conforme pedido. `SPEECH_AI_PROVIDER=gemini` usa os modelos Gemini configurados; `SPEECH_AI_PROVIDER=openai` usa `OPENAI_REALTIME_TTS_MODEL` e converte o PCM 24 kHz retornado para MP3/WAV. Textos longos continuam divididos em partes e capítulos podem ser retomados pelo fluxo de audiolivro.
+Retorna áudio para a leitura com a voz sintética da Milena. O app entrega `audio/mpeg` em MP3 ou WAV, conforme pedido. Usa `OPENAI_REALTIME_TTS_MODEL` e converte o PCM 24 kHz retornado para MP3/WAV. Textos longos continuam divididos em partes e capítulos podem ser retomados pelo fluxo de audiolivro.
 
 Observações:
 
@@ -556,7 +514,7 @@ Observações:
 - Entrada: `multipart/form-data`
 - Campo: `file`
 - Formatos aceitos: PNG, JPG, JPEG e WEBP
-- Responsabilidade: validar imagem, enviar ao Gemini pelo backend e retornar texto limpo, copiável e pronto para leitura com voz.
+- Responsabilidade: validar imagem, enviar à OpenAI pelo backend e retornar texto limpo, copiável e pronto para leitura com voz.
 
 ### `POST /api/pdf-extract`
 
@@ -640,7 +598,7 @@ O MP4 usa H.264/AAC, `yuv420p` e `faststart`, com SRT separado. Se a build do FF
 #### Outros endpoints
 
 - `GET /api/cuts/jobs/:jobId`: estado, progresso, transcrição temporal, candidatos e saídas públicas.
-- `POST /api/cuts/jobs/:jobId/cancel`: cancela o job e sinaliza o processo FFmpeg/Gemini.
+- `POST /api/cuts/jobs/:jobId/cancel`: cancela o job e sinaliza FFmpeg e o processamento OpenAI em curso.
 - `DELETE /api/cuts/jobs/:jobId`: remove o job e todos os temporários.
 - `GET /api/cuts/jobs/:jobId/outputs/:outputId`: assiste/baixa MP4; use `?format=srt` para a legenda.
 
@@ -649,7 +607,7 @@ O MP4 usa H.264/AAC, `yuv420p` e `faststart`, com SRT separado. Se a build do FF
 - `ffmpeg-static` cobre o FFmpeg no Node.js; `FFMPEG_BIN` pode apontar para uma instalação do sistema.
 - FFprobe é necessário para duração e streams. Configure `FFPROBE_BIN` quando o executável não estiver no PATH.
 - `yt-dlp` é recomendado para YouTube. Configure `YTDLP_BIN` quando o comando não estiver no PATH. O fallback do SDK pode continuar sujeito a bloqueios do YouTube.
-- Se a aquisição de um vídeo público do YouTube falhar, `/api/transcribe-url` tenta enviar a URL diretamente à Interactions API do Gemini, conforme a [documentação oficial de vídeo](https://ai.google.dev/gemini-api/docs/video-understanding#youtube_urls). Esse recurso está em preview; quando o yt-dlp não fornece metadados, o app não consegue verificar antecipadamente a duração configurada e fica sujeito aos limites da API Gemini.
+- Se o `yt-dlp` não conseguir obter a mídia, o app retorna erro e pede o upload manual do arquivo; não envia URL para um provedor de IA como fallback.
 - A entrada principal também aceita links diretos de Reels e vídeos do Instagram por `POST /api/transcribe-url`; o extractor do `yt-dlp` é best-effort e alguns Reels públicos podem exigir login, ser limitados ou deixar de funcionar após mudanças da plataforma. O app não usa cookies nem contorna essas restrições.
 - Links privados, vídeos com login, lives indisponíveis e conteúdos protegidos podem ser recusados; nesse caso, envie o arquivo MP4.
 - Use links apenas de conteúdo próprio ou para o qual você tenha autorização. A extração de mídia pode estar sujeita aos termos da plataforma e aos direitos autorais; a integração de link não é uma API oficial de download do YouTube/Instagram.
@@ -684,7 +642,7 @@ O MP4 usa H.264/AAC, `yuv420p` e `faststart`, com SRT separado. Se a build do FF
 ```json
 {
   "dev": "next dev",
-  "dev:clean": "apaga .next-dev e roda next dev",
+  "dev:clean": "limpa os artefatos do Next.js e inicia next dev",
   "clean": "apaga .next, .next-dev e tsconfig.tsbuildinfo",
   "build": "next build",
   "start": "node server.js",
@@ -746,7 +704,7 @@ git push -u origin main
 
 ## Como preparar para Hostinger
 
-Este projeto deve ser publicado como **Node.js Web App**, nao como Hostinger Horizons. O Horizons recria outro app em React/JavaScript e nao preserva as rotas backend do Next.js, upload multipart, Gemini, DeepSeek e FFmpeg.
+Este projeto deve ser publicado como **Node.js Web App**, nao como Hostinger Horizons. O Horizons recria outro app em React/JavaScript e nao preserva as rotas backend do Next.js, upload multipart, OpenAI e FFmpeg.
 
 Checklist de deploy via GitHub:
 
@@ -765,24 +723,13 @@ Checklist de deploy via GitHub:
    - Startup file, se o painel pedir: `server.js`
 10. Configure as variáveis de ambiente:
    - `GEMINI_API_KEY`
-   - `GEMINI_MODEL`
-   - `GEMINI_TRANSCRIBE_MODEL`
-   - `GEMINI_AUDIO_UNDERSTANDING_MODEL`
-   - `GEMINI_TEXT_MODEL`
-   - `GEMINI_LIVE_TRANSCRIBE_MODEL`
-   - `GEMINI_TTS_MODEL`
-   - `GEMINI_TTS_VOICE`
    - `OPENAI_API_KEY`
    - `OPENAI_TEXT_MODEL`
    - `OPENAI_TRANSCRIBE_MODEL`
+   - `OPENAI_TIMESTAMP_TRANSCRIBE_MODEL`
+   - `OPENAI_LIVE_TRANSCRIBE_MODEL`
    - `OPENAI_REALTIME_TTS_MODEL`
    - `OPENAI_TTS_VOICE`
-   - `AUDIO_AI_PROVIDER`
-   - `SPEECH_AI_PROVIDER`
-   - `TEXT_AI_PROVIDER`
-   - `DEEPSEEK_API_KEY`
-   - `DEEPSEEK_BASE_URL`
-   - `DEEPSEEK_MODEL`
    - `MAX_PARALLEL_TRANSCRIPTIONS`
    - `MAX_FILE_SIZE_MB`
    - `MAX_VIDEO_UPLOAD_MB`
@@ -849,15 +796,16 @@ O projeto tambem inclui protecoes contra esse caso:
 - Não integra diretamente com WhatsApp.
 - O usuário precisa baixar ou encaminhar os áudios e subir no app.
 - Não salva histórico em servidor ou banco. Projetos nomeados podem ser salvos manualmente neste navegador, sem arquivos originais.
-- O caminho Gemini não divide automaticamente a mídia; no caminho OpenAI, o servidor divide o áudio convertido em blocos temporários de 10 minutos e transcreve todos em ordem.
+- O servidor converte a mídia em blocos temporários sequenciais de até 10 minutos e transcreve todos com OpenAI em ordem.
 - O player de áudio funciona apenas durante a sessão atual, enquanto o arquivo ainda está no navegador.
 - Texto livre e imagem processada ficam apenas na sessão atual da tela.
 - A extração de imagem depende da legibilidade do texto e da qualidade visual da imagem.
 - Imagens sem texto podem gerar uma descrição objetiva do conteúdo visível.
 - A qualidade da transcrição depende da qualidade do áudio.
 - Áudios com ruído, sobreposição de vozes ou fala distante podem gerar trechos incertos.
-- Cada provedor de texto interpreta apenas o texto já transcrito. A análise multimodal direta de áudio/imagem continua dependente das rotas Gemini existentes.
-- A remoção remota de arquivo no Gemini é feita em modo best effort e depende da versão do SDK suportar exclusão.
+- A análise de áudio usa a transcrição textual; não faz diarização nem entendimento acústico de emoções neste fluxo.
+- O modelo de timestamps `whisper-1` está em uso apenas por compatibilidade do YouTube/Cortes e tem encerramento anunciado para 26/02/2027; planejar migração antes dessa data.
+- A análise YouTube descreve até oito quadros visuais amostrados quando o vídeo pode ser obtido; não é análise quadro a quadro. A detecção de cortes usa FFmpeg, timestamps e curadoria textual OpenAI.
 - A aquisição do YouTube depende das políticas e formatos disponíveis no momento; o upload de MP4 é o caminho de contingência.
 - A aquisição sem login de links do Instagram também é best-effort; o acesso público no navegador não garante que a plataforma libere a faixa de áudio para extração automatizada.
 - A transcrição temporal é gerada pela IA e deve ser revisada antes de publicar um corte.
@@ -878,16 +826,23 @@ O projeto tambem inclui protecoes contra esse caso:
 
 - A lista de arquivos não tem limite fixo de 50. O usuário pode selecionar lotes maiores e adicionar mais arquivos enquanto a fila estiver ativa; os novos itens válidos entram no final da fila.
 - A fila respeita `MAX_PARALLEL_TRANSCRIPTIONS`, mantém status por arquivo e permite pausar, continuar ou cancelar. Pausar deixa terminar os uploads já iniciados. Cancelar impede os próximos e tenta interromper os uploads de transcrição ativos; análises individuais que já começaram podem terminar.
+- Resumo, organização, interpretação e intenção individuais entram numa fila separada depois que cada transcrição termina. Elas podem continuar após a fila de transcrição; a voz só é gerada quando solicitada. Cada operação de IA pode consumir créditos.
+- Ao abrir uma sessão salva, análises individuais incompletas não são reenviadas automaticamente. Use `Retomar análises pendentes` para tentar novamente, ciente de que o texto será enviado ao provedor configurado. A análise individual tem limite de tempo e pode ser tentada de novo se falhar.
 - Um erro em um arquivo não encerra os outros. Arquivos com erro podem ser reprocessados individualmente.
+- Em cada cartão, `Criar história deste áudio` usa a transcrição e o entendimento individual para gerar uma narrativa revisável e copiável. A análise automática precisa estar pronta; a história só é gerada quando solicitada e pode ser incluída no DOCX da sessão.
 - Transcrições completas permanecem no navegador durante a sessão. Resumo, interpretação e organização gerais usam somente os arquivos marcados para análise; arquivos excluídos ou identificados como duplicados continuam disponíveis para consulta e exportação.
 - A área “Entendimento geral da sessão” avisa quando novos arquivos, mudanças de seleção, remoções ou mudanças de ordem tornam a análise desatualizada. Resultados e grupos anteriores não são apagados. Quando somente áudios novos foram adicionados e a análise anterior está completa, é possível consolidar apenas os novos com os resultados anteriores ou regenerar tudo.
 - Texto enviado à IA é particionado em trechos de até 9.000 caracteres, agrupados em chamadas limitadas e consolidados em etapas. Cada trecho conserva o nome do áudio e o marcador de parte. Os limites da API rejeitam excesso em vez de truncar silenciosamente. A transcrição original não é substituída pelos resumos parciais.
 - As respostas globais pedem referências pelo nome do arquivo e separação entre fatos, inferências e sugestões. A atribuição depende da resposta do modelo e deve ser revisada; não há diarização/tempos garantidos quando o provedor não os fornece.
-- “Continuidade e narrativa” permite renomear, dividir, unir e reordenar grupos, alterar a ordem dos áudios e excluir arquivos da análise sem removê-los da sessão. Lotes de continuidade grandes são processados por blocos; a interface alerta que relações entre blocos precisam de revisão manual.
+- “Continuidade e narrativa” permite renomear, dividir, unir e reordenar grupos, alterar a ordem dos áudios e excluir arquivos da análise sem removê-los da sessão. Lotes grandes são analisados em blocos e comparados entre si por descrições geradas pela IA. O número de comparações cresce com o tamanho do lote e pode gerar muitas chamadas, tempo de espera e custos. Descrições podem omitir pistas; conexões e ordem são sugestões para revisão, não fatos garantidos.
+- `Cancelar organização` ou `Limpar tudo` interrompe o envio dos próximos blocos de continuidade. Uma chamada já recebida pelo servidor ou provedor pode terminar e gerar cobrança mesmo após o cancelamento.
 - “Narrativa final revisável” gera formatos como relato fiel, cronologia, biografia, storytelling, roteiro, relatório ou WhatsApp. A narrativa fica separada das transcrições integrais, pode ser editada e só vira áudio se o usuário pedir “Gerar voz da Milena”. A geração TTS é uma leitura MP3 única nesta área; capítulos de audiobook continuam disponíveis no fluxo de documentos.
+- `Copiar narrativa limpa` e `Baixar narrativa DOCX` removem marcações explícitas de fonte da versão entregue, sem alterar o texto de revisão. No DOCX é possível incluir a lista das fontes usadas. Sinais de trecho incerto continuam visíveis e devem ser conferidos.
 - Antes de baixar o DOCX completo, é possível selecionar transcrições, texto integral unificado, resumos e interpretações individuais, resultados gerais e narrativa revisada. O texto integral mantém a origem de cada trecho e pode seguir a ordem original ou a contextual sugerida.
 
 O processamento textual em blocos não equivale a transcrever um áudio grande em partes. O endpoint de transcrição e os limites de tamanho de upload continuam sendo regidos pela configuração do ambiente e pelo provedor de áudio.
+
+Testes offline específicos: `node scripts/test-session-recovery.cjs`, `node scripts/test-audio-recorder.cjs`, `node scripts/test-continuity-batches.cjs`, `node scripts/test-text-cancellation.cjs` e `npm run test:session`. Os testes simulam arquivos, microfone e respostas em lote; não substituem a conferência manual e um teste real de transcrição com a API configurada.
 
 ## Fluxo de produção editorial
 

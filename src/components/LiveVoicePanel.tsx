@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Copy, Download, Mic, Square, Wand2 } from "lucide-react";
+import { Check, Copy, Download, Mic, Plus, Square, Trash2, Wand2 } from "lucide-react";
+import { nanoid } from "nanoid";
 
 import ActionButton from "@/components/ActionButton";
 import ErrorBox from "@/components/ErrorBox";
 import { copyToClipboard } from "@/lib/clipboard";
 import { buildDocxBlob } from "@/lib/export-docx";
+import { getLocalVoicePreferences, saveLocalVoicePreferences } from "@/lib/local-project-store";
 import { normalizePlainText } from "@/lib/plain-text";
-import { EMPTY_VOICE_STATE, VOICE_MODES, type VoiceMode, type VoiceSemanticState } from "@/types/voice";
+import { EMPTY_VOICE_STATE, VOICE_MODES, type VoiceMode, type VoiceSemanticState, type VoiceSnippet } from "@/types/voice";
 
 type Status = "idle" | "starting" | "listening" | "fallback" | "finishing";
 
@@ -23,7 +25,7 @@ const MODE_LABELS: Record<VoiceMode, string> = {
   auto: "Automático", transcription: "Transcrição fiel", clean: "Texto limpo",
   interpretation: "Interpretação", prompt: "Prompt", dev: "Especificação técnica",
   codex: "Codex", claude: "Claude", chatgpt: "ChatGPT", document: "Documento",
-  whatsapp: "WhatsApp", creative: "Briefing criativo",
+  whatsapp: "WhatsApp", creative: "Briefing criativo", email: "E-mail", professional: "Escrita profissional",
 };
 
 const MIME_TYPES = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"];
@@ -54,6 +56,22 @@ function toPcmBase64(buffer: ArrayBuffer) {
   return btoa(binary);
 }
 
+function waitForIceGathering(peer: RTCPeerConnection) {
+  if (peer.iceGatheringState === "complete") return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timeout = window.setTimeout(done, 5000);
+    function done() {
+      window.clearTimeout(timeout);
+      peer.removeEventListener("icegatheringstatechange", onStateChange);
+      resolve();
+    }
+    function onStateChange() {
+      if (peer.iceGatheringState === "complete") done();
+    }
+    peer.addEventListener("icegatheringstatechange", onStateChange);
+  });
+}
+
 export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecordingReady, onLiveTranscriptReady }: LiveVoicePanelProps) {
   const [status, setStatus] = useState<Status>("idle");
   const [interim, setInterim] = useState("");
@@ -68,8 +86,14 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
   const [editedOutput, setEditedOutput] = useState("");
   const [selectedTranscript, setSelectedTranscript] = useState("");
   const [customVocabulary, setCustomVocabulary] = useState("");
+  const [snippets, setSnippets] = useState<VoiceSnippet[]>([]);
+  const [snippetLabel, setSnippetLabel] = useState("");
+  const [snippetText, setSnippetText] = useState("");
+  const [preferencesReady, setPreferencesReady] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const peerRef = useRef<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -79,6 +103,14 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
   const failureRef = useRef(false);
   const isStoppingRef = useRef(false);
   const segmentsRef = useRef<string[]>([]);
+  const committedItemIdsRef = useRef<string[]>([]);
+  const completedItemsRef = useRef(new Map<string, string>());
+  const partialItemsRef = useRef(new Map<string, string>());
+  const pendingTranscriptsRef = useRef(0);
+  const transcriptWaitersRef = useRef(new Set<() => void>());
+  const speechDetectedRef = useRef(false);
+  const lastSpeechAtRef = useRef(0);
+  const providerRef = useRef<"gemini" | "openai">("openai");
   const processedCountRef = useRef(0);
   const semanticRef = useRef<VoiceSemanticState>(EMPTY_VOICE_STATE);
   const modeRef = useRef<VoiceMode>("auto");
@@ -89,17 +121,59 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
   const transcript = stableSegments.join("\n\n");
   const output = mode === "transcription" ? transcript : editedOutput || semantic.output;
 
-  const clearCapture = useCallback(() => {
+  function settlePendingTranscript() {
+    pendingTranscriptsRef.current = Math.max(0, pendingTranscriptsRef.current - 1);
+    if (pendingTranscriptsRef.current === 0) {
+      transcriptWaitersRef.current.forEach((resolve) => resolve());
+      transcriptWaitersRef.current.clear();
+    }
+  }
+
+  function sendRealtimeCommit() {
+    const channel = dataChannelRef.current;
+    if (!channel || channel.readyState !== "open") return false;
+    pendingTranscriptsRef.current += 1;
+    channel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+    return true;
+  }
+
+  function waitForPendingTranscripts(timeoutMs = 7000) {
+    if (pendingTranscriptsRef.current === 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let timeout: number;
+      const finish = () => {
+        window.clearTimeout(timeout);
+        transcriptWaitersRef.current.delete(finish);
+        resolve();
+      };
+      timeout = window.setTimeout(finish, timeoutMs);
+      transcriptWaitersRef.current.add(finish);
+    });
+  }
+
+  function closeRealtimeConnection() {
+    dataChannelRef.current?.close();
+    dataChannelRef.current = null;
+    peerRef.current?.close();
+    peerRef.current = null;
+    if (wsRef.current) wsRef.current.close();
+    wsRef.current = null;
+  }
+
+  function stopRealtimeCapture() {
     captureRef.current?.disconnect();
     sourceRef.current?.disconnect();
     captureRef.current = null;
     sourceRef.current = null;
     void audioContextRef.current?.close().catch(() => undefined);
     audioContextRef.current = null;
+  }
+
+  const clearCapture = useCallback(() => {
+    stopRealtimeCapture();
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
-    if (wsRef.current) wsRef.current.close();
-    wsRef.current = null;
+    closeRealtimeConnection();
   }, []);
 
   const cancelInterpretation = useCallback(() => {
@@ -116,6 +190,29 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
     if (recorderRef.current?.state === "recording") recorderRef.current.stop();
     clearCapture();
   }, [cancelInterpretation, clearCapture]);
+
+  useEffect(() => {
+    let active = true;
+    void getLocalVoicePreferences().then((preferences) => {
+      if (!active) return;
+      setCustomVocabulary(preferences?.vocabulary ?? "");
+      setSnippets(preferences?.snippets ?? []);
+      setPreferencesReady(true);
+    }).catch(() => {
+      if (active) setPreferencesReady(true);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    const timeout = window.setTimeout(() => {
+      void saveLocalVoicePreferences({ id: "voice", vocabulary: customVocabulary, snippets }).catch(() => {
+        setNotice("Não foi possível salvar o vocabulário e os snippets neste navegador.");
+      });
+    }, 400);
+    return () => window.clearTimeout(timeout);
+  }, [customVocabulary, preferencesReady, snippets]);
 
   const interpret = useCallback(async (fullRefresh = false) => {
     if (modeRef.current === "transcription" || requestRef.current) return;
@@ -176,6 +273,7 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
 
   async function startCapture(stream: MediaStream) {
     if (!window.AudioWorkletNode) throw new Error("Este navegador não oferece AudioWorklet para escuta ao vivo.");
+    stopRealtimeCapture();
     const context = new AudioContext();
     audioContextRef.current = context;
     await context.audioWorklet.addModule("/pcm-capture-worklet.js");
@@ -184,6 +282,20 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
     sourceRef.current = source;
     captureRef.current = capture;
     capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+      const input = new Float32Array(event.data);
+      let power = 0;
+      for (const sample of input) power += sample * sample;
+      const rms = input.length ? Math.sqrt(power / input.length) : 0;
+      if (providerRef.current === "openai") {
+        const now = Date.now();
+        if (rms > 0.012) {
+          speechDetectedRef.current = true;
+          lastSpeechAtRef.current = now;
+        } else if (speechDetectedRef.current && now - lastSpeechAtRef.current > 900) {
+          if (sendRealtimeCommit()) speechDetectedRef.current = false;
+        }
+        return;
+      }
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > 512_000) return;
       ws.send(JSON.stringify({ realtimeInput: { audio: { data: toPcmBase64(event.data), mimeType: "audio/pcm;rate=16000" } } }));
@@ -191,6 +303,113 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
     source.connect(capture);
     capture.connect(context.destination);
     await context.resume();
+  }
+
+  async function startOpenAIRealtime(stream: MediaStream, token: string) {
+    const peer = new RTCPeerConnection();
+    peerRef.current = peer;
+    const track = stream.getAudioTracks()[0];
+    if (!track) throw new Error("Nenhuma faixa de áudio foi capturada pelo microfone.");
+    peer.addTrack(track, stream);
+
+    const channel = peer.createDataChannel("oai-events");
+    dataChannelRef.current = channel;
+    channel.onmessage = (message) => {
+      try {
+        const event = JSON.parse(String(message.data)) as {
+          type?: string; item_id?: string; delta?: string; transcript?: string;
+          error?: { code?: string; message?: string };
+        };
+        if (event.type === "input_audio_buffer.committed" && event.item_id) {
+          committedItemIdsRef.current.push(event.item_id);
+        } else if (event.type === "conversation.item.input_audio_transcription.delta" && event.item_id) {
+          const partial = (partialItemsRef.current.get(event.item_id) ?? "") + (event.delta ?? "");
+          partialItemsRef.current.set(event.item_id, partial);
+          setInterim(partial);
+        } else if (event.type === "conversation.item.input_audio_transcription.completed" && event.item_id) {
+          partialItemsRef.current.delete(event.item_id);
+          completedItemsRef.current.set(event.item_id, event.transcript ?? "");
+          while (committedItemIdsRef.current.length && completedItemsRef.current.has(committedItemIdsRef.current[0])) {
+            const itemId = committedItemIdsRef.current.shift()!;
+            const finalText = completedItemsRef.current.get(itemId) ?? "";
+            completedItemsRef.current.delete(itemId);
+            commitSegment(finalText);
+          }
+          setInterim("");
+          settlePendingTranscript();
+        } else if (event.type === "conversation.item.input_audio_transcription.failed") {
+          settlePendingTranscript();
+          failureRef.current = true;
+          if (!isStoppingRef.current) {
+            setStatus("fallback");
+            setNotice("A transcrição ao vivo falhou. A gravação continua e será enviada para transcrição ao finalizar.");
+            captureRef.current?.disconnect();
+            closeRealtimeConnection();
+          }
+        } else if (event.type === "error") {
+          if (event.error?.code === "input_audio_buffer_commit_empty") {
+            settlePendingTranscript();
+            return;
+          }
+          failureRef.current = true;
+          if (!isStoppingRef.current) {
+            setStatus("fallback");
+            setNotice("A conexão de transcrição ao vivo falhou. A gravação continua e será enviada ao parar.");
+            captureRef.current?.disconnect();
+            closeRealtimeConnection();
+          }
+        }
+      } catch {
+        failureRef.current = true;
+        if (!isStoppingRef.current) {
+          setStatus("fallback");
+          setNotice("A resposta da transcrição ao vivo ficou inválida. A gravação completa será transcrita ao parar.");
+          closeRealtimeConnection();
+        }
+      }
+    };
+    channel.onopen = () => {
+      if (isStoppingRef.current || !streamRef.current) return;
+      void startCapture(stream).then(() => setStatus("listening")).catch((cause) => {
+        failureRef.current = true;
+        setStatus("fallback");
+        setNotice(`${cause instanceof Error ? cause.message : "Falha ao monitorar pausas."} A gravação completa será transcrita ao parar.`);
+        closeRealtimeConnection();
+      });
+    };
+    channel.onerror = () => {
+      failureRef.current = true;
+      if (!isStoppingRef.current) {
+        setStatus("fallback");
+        setNotice("A conexão de voz foi interrompida. A gravação continuará para transcrição ao finalizar.");
+        closeRealtimeConnection();
+      }
+    };
+    peer.onconnectionstatechange = () => {
+      if (peer.connectionState === "failed" && !isStoppingRef.current) {
+        failureRef.current = true;
+        setStatus("fallback");
+        setNotice("A conexão de voz caiu. A gravação continuará para transcrição ao finalizar.");
+        closeRealtimeConnection();
+      }
+    };
+
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    await waitForIceGathering(peer);
+    if (isStoppingRef.current || !peer.localDescription?.sdp) return;
+    const response = await fetch("https://api.openai.com/v1/realtime/calls", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/sdp" },
+      body: peer.localDescription.sdp,
+    });
+    if (!response.ok) {
+      const message = response.status === 401 || response.status === 403
+        ? "A OpenAI recusou a sessão temporária. Inicie a gravação novamente."
+        : `Não foi possível abrir a conexão de voz OpenAI (HTTP ${response.status}).`;
+      throw new Error(message);
+    }
+    await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
   }
 
   async function startListening() {
@@ -204,6 +423,11 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
     setInterim("");
     setStableSegments([]);
     segmentsRef.current = [];
+    committedItemIdsRef.current = [];
+    completedItemsRef.current.clear();
+    partialItemsRef.current.clear();
+    pendingTranscriptsRef.current = 0;
+    speechDetectedRef.current = false;
     semanticRef.current = EMPTY_VOICE_STATE;
     setSemantic(EMPTY_VOICE_STATE);
     setEditedOutput("");
@@ -229,17 +453,18 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ vocabulary: customVocabulary.split(/[,;\n]/).map((term) => term.trim()).filter(Boolean).slice(0, 50) }),
       });
-      const payload = await response.json() as { ok: boolean; token?: string; model?: string; config?: object; provider?: string; uploadOnly?: boolean; error?: string };
-      if (response.ok && payload.ok && payload.provider === "openai" && payload.uploadOnly) {
-        failureRef.current = true;
-        setStatus("fallback");
-        setNotice("Gravação ativa. A OpenAI transcreverá o áudio quando você parar e enviar a gravação.");
-        return;
-      }
-      if (!response.ok || !payload.ok || !payload.token || !payload.model || !payload.config) {
+      const payload = await response.json() as { ok: boolean; token?: string; model?: string; config?: object; provider?: string; error?: string };
+      if (!response.ok || !payload.ok || !payload.token || !payload.provider) {
         throw new Error(payload.error || "Escuta ao vivo indisponível.");
       }
       if (isStoppingRef.current) return;
+
+      providerRef.current = payload.provider === "openai" ? "openai" : "gemini";
+      if (providerRef.current === "openai") {
+        await startOpenAIRealtime(stream, payload.token);
+        return;
+      }
+      if (!payload.model || !payload.config) throw new Error("Configuração da sessão Gemini incompleta.");
 
       const ws = new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(payload.token)}`);
       wsRef.current = ws;
@@ -288,9 +513,45 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
           ? "Permita o microfone para iniciar a escuta." : cause instanceof Error ? cause.message : "Falha ao abrir o microfone.");
       } else {
         failureRef.current = true;
+        closeRealtimeConnection();
         setStatus("fallback");
         setNotice(`${cause instanceof Error ? cause.message : "Escuta ao vivo indisponível."} A gravação continua; ao parar, será transcrita como arquivo.`);
       }
+    }
+  }
+
+  async function retryLiveConnection() {
+    const stream = streamRef.current;
+    if (status !== "fallback" || isStoppingRef.current || !stream) return;
+    setStatus("starting");
+    setError("");
+    setNotice("Tentando restabelecer a transcrição ao vivo. A gravação completa continua protegida.");
+    stopRealtimeCapture();
+    closeRealtimeConnection();
+    committedItemIdsRef.current = [];
+    completedItemsRef.current.clear();
+    partialItemsRef.current.clear();
+    pendingTranscriptsRef.current = 0;
+    speechDetectedRef.current = false;
+    setInterim("");
+
+    try {
+      const response = await fetch("/api/live-transcribe-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vocabulary: customVocabulary.split(/[,;\n]/).map((term) => term.trim()).filter(Boolean).slice(0, 50) }),
+      });
+      const payload = await response.json() as { ok: boolean; token?: string; provider?: string; error?: string };
+      if (!response.ok || !payload.ok || !payload.token || payload.provider !== "openai") {
+        throw new Error(payload.error || "Não foi possível reabrir a sessão de transcrição.");
+      }
+      await startOpenAIRealtime(stream, payload.token);
+      setNotice("Reconexão iniciada. Ao parar, o áudio inteiro será transcrito do arquivo para cobrir qualquer intervalo sem streaming.");
+    } catch (cause) {
+      stopRealtimeCapture();
+      closeRealtimeConnection();
+      setStatus("fallback");
+      setNotice(`${cause instanceof Error ? cause.message : "A reconexão falhou."} A gravação continua e será transcrita integralmente ao parar.`);
     }
   }
 
@@ -303,11 +564,22 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
     if (recorder.state !== "inactive") recorder.stop();
     else return;
     captureRef.current?.disconnect();
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (providerRef.current === "gemini" && wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
     }
     await chunksReady;
-    await new Promise((resolve) => setTimeout(resolve, failureRef.current ? 100 : 1600));
+    if (providerRef.current === "openai" && !failureRef.current) {
+      streamRef.current?.getAudioTracks().forEach((track) => { track.enabled = false; });
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      if (speechDetectedRef.current || (!segmentsRef.current.length && pendingTranscriptsRef.current === 0)) {
+        sendRealtimeCommit();
+        speechDetectedRef.current = false;
+      }
+      await waitForPendingTranscripts();
+      if (pendingTranscriptsRef.current > 0) failureRef.current = true;
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, failureRef.current ? 100 : 1600));
+    }
     const mime = recorder.mimeType || chunksRef.current[0]?.type || "audio/webm";
     const blob = new Blob(chunksRef.current, { type: mime });
     chunksRef.current = [];
@@ -337,6 +609,10 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
     } finally {
       setStatus("idle");
       isStoppingRef.current = false;
+      committedItemIdsRef.current = [];
+      completedItemsRef.current.clear();
+      partialItemsRef.current.clear();
+      pendingTranscriptsRef.current = 0;
     }
   }
 
@@ -395,8 +671,8 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
     <section className="rounded-lg border border-blue-100 bg-white p-4 shadow-editorial sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-xl font-black text-slate-950"><Mic className="h-5 w-5 text-leste-blue" /> Escuta ao vivo e entendimento da voz</h2>
-          <p className="mt-1 text-sm text-slate-600">Fale naturalmente. A transcrição provisória aparece enquanto você fala; trechos confirmados alimentam o entendimento.</p>
+          <h2 className="flex items-center gap-2 text-xl font-black text-slate-950"><Mic className="h-5 w-5 text-leste-blue" /> Flow Leste · ditado inteligente</h2>
+          <p className="mt-1 text-sm text-slate-600">Fale naturalmente. A transcrição aparece durante a fala e os trechos confirmados alimentam o entendimento sem substituir a versão fiel.</p>
         </div>
         {status === "idle" ? (
           <ActionButton onClick={() => void startListening()} type="button"><Mic className="h-4 w-4" /> Começar a ouvir</ActionButton>
@@ -408,6 +684,7 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
       <p aria-live="polite" className="mt-3 text-sm font-semibold text-leste-blue">
         {status === "starting" ? "Abrindo microfone e conexão..." : status === "listening" ? "Ouvindo e transcrevendo ao vivo" : status === "fallback" ? "Gravando para transcrição ao finalizar" : status === "finishing" ? "Finalizando e enviando para análise..." : "Microfone desligado"}
       </p>
+      {status === "fallback" ? <div className="mt-2"><ActionButton disabled={isStoppingRef.current} fullWidth={false} onClick={() => void retryLiveConnection()} type="button" variant="ghost">Tentar reconectar</ActionButton></div> : null}
       {notice ? <p className="mt-2 rounded-lg bg-blue-50 p-3 text-sm text-blue-900" role="status">{notice}</p> : null}
       {error ? <div className="mt-3"><ErrorBox message={error} /></div> : null}
 
@@ -428,6 +705,37 @@ export default function LiveVoicePanel({ maxFileSizeMb, transcripts, onRecording
       <label className="mt-3 block text-sm font-semibold text-slate-700">Vocabulário personalizado (nomes, marcas ou termos técnicos, separados por vírgula)
         <input className="mt-1 min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal" disabled={status !== "idle"} maxLength={1000} onChange={(event) => setCustomVocabulary(event.target.value)} placeholder="Ex.: Mulheres do Leste, nome da entrevistada" value={customVocabulary} />
       </label>
+
+      <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <summary className="cursor-pointer text-sm font-bold text-slate-800">Snippets e frases salvas</summary>
+        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_2fr_auto] sm:items-end">
+          <label className="text-xs font-semibold text-slate-700">Nome da frase
+            <input className="mt-1 min-h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm font-normal" maxLength={60} onChange={(event) => setSnippetLabel(event.target.value)} value={snippetLabel} />
+          </label>
+          <label className="text-xs font-semibold text-slate-700">Texto
+            <input className="mt-1 min-h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm font-normal" maxLength={500} onChange={(event) => setSnippetText(event.target.value)} value={snippetText} />
+          </label>
+          <ActionButton disabled={!snippetLabel.trim() || !snippetText.trim()} fullWidth={false} onClick={() => {
+            setSnippets((current) => [...current, { id: nanoid(), label: snippetLabel.trim(), text: snippetText.trim() }]);
+            setSnippetLabel("");
+            setSnippetText("");
+          }} type="button" variant="secondary"><Plus className="h-4 w-4" /> Salvar</ActionButton>
+        </div>
+        {snippets.length ? <ul className="mt-3 space-y-2">
+          {snippets.map((snippet) => <li className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white p-2" key={snippet.id}>
+            <span className="min-w-0 flex-1 text-sm text-slate-700"><strong>{snippet.label}:</strong> {snippet.text}</span>
+            <span className="flex shrink-0 gap-2">
+              <button className="text-xs font-bold text-leste-blue" onClick={() => void copy(snippet.text)} type="button">Copiar</button>
+              <button aria-label={`Remover ${snippet.label}`} className="text-slate-500 hover:text-red-700" onClick={() => setSnippets((current) => current.filter((item) => item.id !== snippet.id))} type="button"><Trash2 className="h-4 w-4" /></button>
+            </span>
+          </li>)}
+        </ul> : <p className="mt-2 text-xs text-slate-500">Salve frases usadas com frequência e copie ou insira no resultado sem alterar a transcrição original.</p>}
+        {snippets.length ? <p className="mt-2 text-xs text-slate-500">Use “Inserir no resultado” para acrescentar uma frase ao texto editável.</p> : null}
+        {snippets.length ? <div className="mt-2 flex flex-wrap gap-2">
+          {snippets.map((snippet) => <button className="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-leste-blue disabled:opacity-40" disabled={mode === "transcription"} key={`insert-${snippet.id}`} onClick={() => setEditedOutput((current) => `${current || output}${(current || output) ? "\n\n" : ""}${snippet.text}`)} type="button">Inserir: {snippet.label}</button>)}
+        </div> : null}
+      </details>
+      <p className="mt-2 text-xs text-slate-500">Vocabulário e snippets ficam neste navegador. Os áudios não são guardados no armazenamento local.</p>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div>

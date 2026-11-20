@@ -1,9 +1,11 @@
 export const VOICE_MODES = [
   "auto", "transcription", "clean", "interpretation", "prompt", "dev",
-  "codex", "claude", "chatgpt", "document", "whatsapp", "creative",
+  "codex", "claude", "chatgpt", "document", "whatsapp", "creative", "email", "professional",
 ] as const;
 
 export type VoiceMode = (typeof VOICE_MODES)[number];
+
+export type VoiceSnippet = { id: string; label: string; text: string };
 
 export type VoiceSemanticState = {
   intent: string;

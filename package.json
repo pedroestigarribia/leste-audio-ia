@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "dev:clean": "node -e \"require('fs').rmSync('.next-dev',{recursive:true,force:true})\" && next dev",
+    "dev:clean": "npm run clean && next dev",
     "clean": "node -e \"const fs=require('fs');for(const p of ['.next','.next-dev','tsconfig.tsbuildinfo'])fs.rmSync(p,{recursive:true,force:true})\"",
     "build": "next build",
     "start": "node server.js",

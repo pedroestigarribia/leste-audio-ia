@@ -8,6 +8,7 @@ type GeminiTextTaskParams = {
   system?: string;
   prompt: string;
   temperature?: number;
+  signal?: AbortSignal;
 };
 
 function readResponseText(response: any) {
@@ -33,12 +34,14 @@ export async function runGeminiTextTask({
   system,
   prompt,
   temperature = 0.2,
+  signal,
 }: GeminiTextTaskParams): Promise<string> {
   const env = getServerEnv();
   const client = new GoogleGenAI({ apiKey: requireGeminiApiKey() });
 
   try {
     const config: Record<string, unknown> = {};
+    if (signal) config.abortSignal = signal;
 
     if (system) {
       config.systemInstruction = system;

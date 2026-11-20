@@ -12,11 +12,13 @@ const DEFAULTS = {
   geminiLiveModel: "gemini-3.1-flash-live-preview",
   geminiLiveTranscribeModel: "gemini-3.5-transcribe-live",
   geminiTtsVoice: "Kore",
-  textAiProvider: "gemini" as const,
-  audioAiProvider: "gemini" as const,
-  speechAiProvider: "gemini" as const,
+  textAiProvider: "openai" as const,
+  audioAiProvider: "openai" as const,
+  speechAiProvider: "openai" as const,
   openAiTextModel: "gpt-6-luna",
   openAiTranscribeModel: "gpt-transcribe",
+  openAiTimestampTranscribeModel: "whisper-1",
+  openAiLiveTranscribeModel: "gpt-live-transcribe",
   openAiRealtimeTtsModel: "gpt-realtime-2.1-mini",
   openAiTtsVoice: "marin",
   deepSeekBaseUrl: "https://api.deepseek.com",
@@ -52,6 +54,8 @@ const rawEnvSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_TEXT_MODEL: z.string().optional(),
   OPENAI_TRANSCRIBE_MODEL: z.string().optional(),
+  OPENAI_TIMESTAMP_TRANSCRIBE_MODEL: z.string().optional(),
+  OPENAI_LIVE_TRANSCRIBE_MODEL: z.string().optional(),
   OPENAI_REALTIME_TTS_MODEL: z.string().optional(),
   OPENAI_TTS_VOICE: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
@@ -97,6 +101,8 @@ type ParsedEnv = {
   openAiApiKey?: string;
   openAiTextModel: string;
   openAiTranscribeModel: string;
+  openAiTimestampTranscribeModel: string;
+  openAiLiveTranscribeModel: string;
   openAiRealtimeTtsModel: string;
   openAiTtsVoice: string;
   deepSeekApiKey?: string;
@@ -159,13 +165,18 @@ function readEnv(): ParsedEnv {
     geminiLiveTranscribeModel:
       normalizeOptionalString(parsed.GEMINI_LIVE_TRANSCRIBE_MODEL) ?? DEFAULTS.geminiLiveTranscribeModel,
     geminiTtsVoice: normalizeOptionalString(parsed.GEMINI_TTS_VOICE) ?? DEFAULTS.geminiTtsVoice,
-    textAiProvider: parsed.TEXT_AI_PROVIDER ?? DEFAULTS.textAiProvider,
-    audioAiProvider: parsed.AUDIO_AI_PROVIDER ?? DEFAULTS.audioAiProvider,
-    speechAiProvider: parsed.SPEECH_AI_PROVIDER ?? DEFAULTS.speechAiProvider,
+    // Legacy provider settings remain parseable for existing .env files; active AI traffic is OpenAI-only.
+    textAiProvider: DEFAULTS.textAiProvider,
+    audioAiProvider: DEFAULTS.audioAiProvider,
+    speechAiProvider: DEFAULTS.speechAiProvider,
     openAiApiKey: normalizeOptionalString(parsed.OPENAI_API_KEY),
     openAiTextModel: normalizeOptionalString(parsed.OPENAI_TEXT_MODEL) ?? DEFAULTS.openAiTextModel,
     openAiTranscribeModel:
       normalizeOptionalString(parsed.OPENAI_TRANSCRIBE_MODEL) ?? DEFAULTS.openAiTranscribeModel,
+    openAiTimestampTranscribeModel:
+      normalizeOptionalString(parsed.OPENAI_TIMESTAMP_TRANSCRIBE_MODEL) ?? DEFAULTS.openAiTimestampTranscribeModel,
+    openAiLiveTranscribeModel:
+      normalizeOptionalString(parsed.OPENAI_LIVE_TRANSCRIBE_MODEL) ?? DEFAULTS.openAiLiveTranscribeModel,
     openAiRealtimeTtsModel:
       normalizeOptionalString(parsed.OPENAI_REALTIME_TTS_MODEL) ?? DEFAULTS.openAiRealtimeTtsModel,
     openAiTtsVoice: normalizeOptionalString(parsed.OPENAI_TTS_VOICE) ?? DEFAULTS.openAiTtsVoice,
@@ -219,6 +230,8 @@ export function getAppConfig() {
     speechAiProvider: env.speechAiProvider,
     openAiTextModel: env.openAiTextModel,
     openAiTranscribeModel: env.openAiTranscribeModel,
+    openAiTimestampTranscribeModel: env.openAiTimestampTranscribeModel,
+    openAiLiveTranscribeModel: env.openAiLiveTranscribeModel,
     openAiRealtimeTtsModel: env.openAiRealtimeTtsModel,
     openAiTtsVoice: env.openAiTtsVoice,
     deepSeekModel: env.deepSeekModel,
@@ -252,9 +265,7 @@ export function getOpenAIMissingKeyMessage() {
 }
 
 export function getTextAIMissingKeyMessage() {
-  return readEnv().textAiProvider === "openai"
-    ? getOpenAIMissingKeyMessage()
-    : getDeepSeekMissingKeyMessage();
+  return getOpenAIMissingKeyMessage();
 }
 
 export function requireGeminiApiKey() {

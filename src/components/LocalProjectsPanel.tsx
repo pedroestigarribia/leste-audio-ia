@@ -6,7 +6,7 @@ import { nanoid } from "nanoid";
 
 import ActionButton from "@/components/ActionButton";
 import ErrorBox from "@/components/ErrorBox";
-import { deleteLocalProject, listLocalProjects, saveLocalProject } from "@/lib/local-project-store";
+import { deleteLocalProject, listLocalProjects, RECOVERY_PROJECT_ID, saveLocalProject } from "@/lib/local-project-store";
 import type { LocalProjectRecord, LocalProjectSnapshot } from "@/types/local-project";
 
 const BACKUP_FORMAT = "leste-audio-ia-local-project";
@@ -43,7 +43,7 @@ export default function LocalProjectsPanel({
 
   async function refreshProjects() {
     try {
-      setProjects(await listLocalProjects());
+      setProjects((await listLocalProjects()).filter((project) => project.id !== RECOVERY_PROJECT_ID));
       setError("");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Não foi possível ler os projetos locais.");
@@ -73,7 +73,7 @@ export default function LocalProjectsPanel({
     setError("");
     setNotice("");
     try {
-      const existing = !asNew && activeProject ? projects.find((project) => project.id === activeProject.id) : undefined;
+      const existing = !asNew && activeProject && activeProject.id !== RECOVERY_PROJECT_ID ? projects.find((project) => project.id === activeProject.id) : undefined;
       const now = new Date().toISOString();
       const record: LocalProjectRecord = {
         id: existing?.id ?? nanoid(),

@@ -15,16 +15,42 @@ const bodySchema = z.object({
     .array(z.object({ id: z.string().min(1), name: z.string().min(1), transcription: z.string().min(1).max(50000) }))
     .min(1)
     .max(30),
+  includeDescriptions: z.boolean().optional().default(false),
+}).superRefine(({ items }, context) => {
+  if (new Set(items.map((item) => item.id)).size !== items.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "IDs de arquivo duplicados.", path: ["items"] });
+  }
 });
 
-function parsePlan(raw: string, itemIds: string[]): ContinuityPlan {
-  const candidate = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, "")) as {
-    groups?: Array<{ id?: string; title?: string; itemIds?: string[]; explanation?: string; confidence?: number }>;
-    warnings?: string[];
-  };
+const responseSchema = z.object({
+  groups: z.array(z.object({
+    title: z.string().nullish(),
+    itemIds: z.array(z.string()).nullish(),
+    explanation: z.string().nullish(),
+    confidence: z.unknown().optional(),
+  })).nullish(),
+  warnings: z.array(z.string()).nullish(),
+  descriptions: z.unknown().optional(),
+});
+
+function parsePlan(raw: string, itemIds: string[]): { plan: ContinuityPlan; descriptions?: unknown } {
+  const candidate = responseSchema.parse(JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, "")));
   const remaining = new Set(itemIds);
+  const known = new Set(itemIds);
+  let duplicate = false;
+  let unknown = false;
   const groups = (candidate.groups ?? []).flatMap((group, index) => {
-    const validIds = (group.itemIds ?? []).filter((id) => remaining.delete(id));
+    const validIds = (group.itemIds ?? []).filter((id) => {
+      if (!known.has(id)) {
+        unknown = true;
+        return false;
+      }
+      if (!remaining.delete(id)) {
+        duplicate = true;
+        return false;
+      }
+      return true;
+    });
     if (!validIds.length) return [];
     return [{
       id: `grupo-${index + 1}`,
@@ -34,13 +60,22 @@ function parsePlan(raw: string, itemIds: string[]): ContinuityPlan {
       confidence: Math.max(0, Math.min(100, Number(group.confidence) || 0)),
     }];
   });
+  const missing = remaining.size > 0;
   for (const id of remaining) {
     groups.push({ id: `grupo-${groups.length + 1}`, title: "Arquivo independente", itemIds: [id], explanation: "Arquivo sem conexão confirmada com os demais.", confidence: 0 });
   }
   return {
-    groups,
-    warnings: (candidate.warnings ?? []).map((warning) => normalizePlainText(warning)).filter(Boolean).slice(0, 12),
-    generatedAt: new Date().toISOString(),
+    plan: {
+      groups: groups.map((group, index) => ({ ...group, id: `grupo-${index + 1}` })),
+      warnings: [
+        ...(candidate.warnings ?? []).map((warning) => normalizePlainText(warning)).filter(Boolean),
+        ...(duplicate ? ["IDs duplicados na resposta; repetições ignoradas."] : []),
+        ...(unknown ? ["IDs desconhecidos na resposta; valores ignorados."] : []),
+        ...(missing ? ["IDs ausentes na resposta foram preservados como arquivos independentes."] : []),
+      ],
+      generatedAt: new Date().toISOString(),
+    },
+    descriptions: candidate.descriptions,
   };
 }
 
@@ -50,9 +85,14 @@ export async function POST(request: Request) {
     if (!parsed.success) {
       return NextResponse.json({ ok: false, error: parsed.error.issues[0]?.message ?? "Dados inválidos." }, { status: 400 });
     }
-    const { system, prompt } = buildOrganizeSequencePrompt(parsed.data.items);
-    const result = await runTextTask({ system, prompt, temperature: 0.1 });
-    return NextResponse.json({ ok: true, result: parsePlan(result, parsed.data.items.map((item) => item.id)) });
+    const { system, prompt } = buildOrganizeSequencePrompt(parsed.data.items, parsed.data.includeDescriptions);
+    const result = await runTextTask({ system, prompt, temperature: 0.1, signal: request.signal });
+    const parsedResult = parsePlan(result, parsed.data.items.map((item) => item.id));
+    return NextResponse.json({
+      ok: true,
+      result: parsedResult.plan,
+      ...(parsed.data.includeDescriptions ? { descriptions: parsedResult.descriptions ?? [] } : {}),
+    });
   } catch (error) {
     const message = error instanceof MissingApiKeyError ? getTextAIMissingKeyMessage() : error instanceof Error ? error.message : "Falha ao organizar a sequência.";
     return NextResponse.json({ ok: false, error: message }, { status: 502 });

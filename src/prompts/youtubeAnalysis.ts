@@ -17,7 +17,7 @@ export function buildYoutubeAnalysisPrompt(params: {
 Participante: ${seg.participant}
 Texto: ${seg.text}
 Tonalidade: ${seg.tone}
-Confiança: ${(seg.confidence * 100).toFixed(0)}%`;
+Confiança: ${seg.confidence === undefined ? "não estimada" : `${(seg.confidence * 100).toFixed(0)}%`}`;
     })
     .join("\n\n");
 

@@ -13,6 +13,8 @@ const MODE_INSTRUCTIONS: Record<VoiceMode, string> = {
   document: "Produza um documento estruturado, pronto para revisão.",
   whatsapp: "Produza uma mensagem natural e concisa para WhatsApp.",
   creative: "Produza um briefing criativo fiel ao material recebido.",
+  email: "Produza um e-mail claro e profissional, com assunto sugerido quando útil, sem inventar informações.",
+  professional: "Reescreva em linguagem profissional e natural, preservando a intenção e todos os dados da fala.",
 };
 
 export function buildVoiceSessionPrompt(params: {

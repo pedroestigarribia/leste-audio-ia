@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { getMaxFileSizeBytes, getServerEnv, getGeminiMissingKeyMessage, MissingApiKeyError } from "@/lib/env";
-import { extractTextFromImageWithGemini, getImageExtension, isAllowedImage } from "@/lib/image";
+import { getMaxFileSizeBytes, getServerEnv, getOpenAIMissingKeyMessage, MissingApiKeyError } from "@/lib/env";
+import { extractTextFromImageWithOpenAI, getImageExtension, isAllowedImage } from "@/lib/image";
 import { parseMultipartFile } from "@/lib/multipart";
 
 export const runtime = "nodejs";
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const text = await extractTextFromImageWithGemini({
+    const text = await extractTextFromImageWithOpenAI({
       buffer,
       mimeType,
       originalName: file.name,
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof MissingApiKeyError) {
-      return buildJsonError(getGeminiMissingKeyMessage(), 500);
+      return buildJsonError(getOpenAIMissingKeyMessage(), 500);
     }
 
     return buildJsonError(

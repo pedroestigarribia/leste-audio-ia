@@ -4,7 +4,7 @@ export type YoutubeSegment = {
   participant: string;
   text: string;
   tone: string;
-  confidence: number;
+  confidence?: number;
 };
 
 export type YoutubeParticipant = {
