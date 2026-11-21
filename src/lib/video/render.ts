@@ -57,11 +57,11 @@ function subtitleText(
 
 function aspectFilter(aspectRatio: AspectRatio) {
   if (aspectRatio === "9:16") {
-    return "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920";
+    return "crop='min(iw,ih*9/16)':'min(ih,iw*16/9)',scale=1080:1920";
   }
 
   if (aspectRatio === "1:1") {
-    return "scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080";
+    return "crop='min(iw,ih)':'min(iw,ih)',scale=1080:1080";
   }
 
   return "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black";
@@ -121,6 +121,10 @@ export async function renderVideoClip(params: {
 
   const args = [
     "-y",
+    "-filter_threads",
+    "1",
+    "-threads",
+    "1",
     "-ss",
     params.candidate.startTime.toFixed(3),
     "-i",
@@ -131,6 +135,8 @@ export async function renderVideoClip(params: {
     buildVideoFilter(params.options, params.srtPath, params.reframe),
     "-c:v",
     "libx264",
+    "-threads:v",
+    "1",
     "-preset",
     "fast",
     "-crf",

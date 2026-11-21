@@ -30,6 +30,21 @@ async function main() {
 
   try {
     const reframeMath = loadTypeScript("src/lib/video/reframe-math.ts");
+    let renderArgs;
+    const resourceSafeRender = loadTypeScript("src/lib/video/render.ts", {
+      "@/lib/video/tools": { escapeSubtitlePath: (value) => value, runFfmpeg: async (args) => { renderArgs = args; } },
+      "@/lib/video/reframe-math": reframeMath,
+    });
+    await resourceSafeRender.renderVideoClip({
+      sourcePath: "input.mp4",
+      outputPath: "output.mp4",
+      candidate: { startTime: 0, endTime: 2 },
+      options: { aspectRatio: "9:16", captionPreset: "none" },
+    });
+    assert.equal(renderArgs[renderArgs.indexOf("-filter_threads") + 1], "1");
+    assert.equal(renderArgs[renderArgs.indexOf("-threads") + 1], "1");
+    assert.equal(renderArgs[renderArgs.indexOf("-threads:v") + 1], "1");
+    assert.match(renderArgs[renderArgs.indexOf("-vf") + 1], /^crop=.*scale=1080:1920/);
     const { writeSrt } = loadTypeScript("src/lib/video/render.ts", {
       "@/lib/video/tools": { escapeSubtitlePath: (value) => value, runFfmpeg: async () => undefined },
       "@/lib/video/reframe-math": reframeMath,
