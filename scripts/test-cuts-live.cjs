@@ -16,8 +16,13 @@ async function json(url, init) {
 
 async function waitForJob(jobId, expectedStage) {
   const limit = Date.now() + 240_000;
+  let lastStage;
   while (Date.now() < limit) {
     const { job } = await json(`/api/cuts/jobs/${jobId}`);
+    if (job.stage !== lastStage) {
+      console.log(`Etapa: ${job.stage}`);
+      lastStage = job.stage;
+    }
     if (job.stage === expectedStage) return job;
     if (["failed", "cancelled"].includes(job.stage)) throw new Error(`Job ${job.stage}: ${job.error || job.message}`);
     await new Promise((resolve) => setTimeout(resolve, 2_000));
@@ -56,10 +61,13 @@ async function main() {
     const created = await json("/api/cuts/jobs", { method: "POST", body: form });
     jobId = created.jobId;
     assert.ok(jobId);
+    console.log("Upload sintético concluído; iniciando a análise.");
     await json(`/api/cuts/jobs/${jobId}/analyze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferences }) });
+    console.log("Análise iniciada; aguardando a transcrição.");
     const analyzed = await waitForJob(jobId, "ready_for_review");
     assert.ok(analyzed.transcript?.segments?.length, "A transcrição não retornou segmentos.");
     assert.ok(analyzed.candidates?.length, "A análise não retornou candidatos.");
+    console.log("Transcrição e sugestões prontas; gerando corte.");
     await json(`/api/cuts/jobs/${jobId}/render`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clips: [{ candidateId: analyzed.candidates[0].id }], options: { aspectRatio: "9:16", captionPreset: "simple", reframeMode: "center" } }),

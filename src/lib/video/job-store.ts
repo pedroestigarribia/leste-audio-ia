@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
@@ -61,7 +62,14 @@ function getStatePath(jobId: string) {
 
 async function saveJob(job: StoredJob) {
   await ensureJobDir(job.jobId);
-  await fs.writeFile(getStatePath(job.jobId), JSON.stringify(job, null, 2), "utf8");
+  const statePath = getStatePath(job.jobId);
+  const temporaryPath = `${statePath}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temporaryPath, JSON.stringify(job, null, 2), "utf8");
+    await fs.rename(temporaryPath, statePath);
+  } finally {
+    await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
 }
 
 export async function getStoredJob(jobId: string): Promise<StoredJob | null> {

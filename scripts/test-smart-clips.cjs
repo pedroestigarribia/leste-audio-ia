@@ -98,6 +98,38 @@ async function main() {
     };
     const youtube = loadTypeScript("src/lib/youtube.ts");
     const sourceUrls = loadTypeScript("src/lib/video/source-url.ts", { "@/lib/youtube": youtube });
+    let delayWrite = false;
+    let notifyWrite;
+    let allowWrite;
+    const writeStarted = new Promise((resolve) => { notifyWrite = resolve; });
+    const writeAllowed = new Promise((resolve) => { allowWrite = resolve; });
+    const controlledFs = {
+      promises: {
+        ...fs,
+        writeFile: async (filePath, content, ...args) => {
+          if (delayWrite && path.basename(filePath).startsWith("state.json")) {
+            await fs.writeFile(filePath, "{", ...args);
+            notifyWrite();
+            await writeAllowed;
+          }
+          return fs.writeFile(filePath, content, ...args);
+        },
+      },
+    };
+    const atomicStore = loadTypeScript("src/lib/video/job-store.ts", {
+      "node:fs": controlledFs,
+      "@/lib/env": env,
+      "@/lib/video/paths": { ...paths, createJobId: () => "cut-atomic-test-123" },
+    });
+    const atomicJob = await atomicStore.createVideoJob({ sourceType: "upload", sourceName: "test.mp4" });
+    delayWrite = true;
+    const updating = atomicStore.updateVideoJob(atomicJob.jobId, { stage: "validating" });
+    await writeStarted;
+    const duringWrite = await atomicStore.getStoredJob(atomicJob.jobId);
+    allowWrite();
+    await updating;
+    assert.equal(duringWrite?.stage, "created", "Concurrent reads must see the old complete state, not a partial JSON file.");
+    await paths.safeDeletePath(getJobDir(atomicJob.jobId));
     const jobStore = loadTypeScript("src/lib/video/job-store.ts", {
       "@/lib/env": env,
       "@/lib/video/paths": paths,
@@ -155,6 +187,21 @@ async function main() {
     assert.equal(jobStore.getStaleJobAction("rendering", "render", true), "render");
     assert.equal(jobStore.getStaleJobAction("transcribing", undefined, true), "analyze");
     assert.equal(jobStore.getStaleJobAction("rendering", undefined, true), undefined);
+    const failedFfmpeg = Object.assign(new Error("Command failed: /home/private/video.mp4"), {
+      code: 1,
+      stderr: "Failed to configure output pad: Resource temporarily unavailable. /home/private/video.mp4",
+    });
+    const videoTools = loadTypeScript("src/lib/video/tools.ts", {
+      "ffmpeg-static": "/example/ffmpeg",
+      "@derhuerst/ffprobe-static": "/example/ffprobe",
+      "@/lib/env": env,
+      "@/lib/run-command": { runCommand: async () => { throw failedFfmpeg; } },
+    });
+    await assert.rejects(videoTools.runFfmpeg([]), (error) => {
+      assert.match(error.message, /recursos/i);
+      assert.doesNotMatch(error.message, /\/home\/private|video\.mp4/);
+      return true;
+    });
     const publicJob = jobStore.toPublicJob({
       jobId: "cut-test-job-12345678",
       stage: "failed",
