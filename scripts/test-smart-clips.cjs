@@ -96,7 +96,8 @@ async function main() {
     assert.equal(clamped[0].end, 605);
     assert.equal(clamped[0].words[0].end, 605);
 
-    const env = { getServerEnv: () => ({ maxActiveCutJobs: 1, maxVideoUploadMb: 125, maxVideoDurationSec: 120, cutOutputTtlMinutes: 60, processTimeoutMs: 15_000 }) };
+    let proxyUrl = "http://proxy.example:8080";
+    const env = { getServerEnv: () => ({ maxActiveCutJobs: 1, maxVideoUploadMb: 125, maxVideoDurationSec: 120, cutOutputTtlMinutes: 60, processTimeoutMs: 15_000, ytDlpProxyUrl: proxyUrl }) };
     const jobsDir = path.join(tempDir, "jobs");
     const getJobDir = (jobId) => path.join(jobsDir, jobId);
     let lastJobNumber = 0;
@@ -193,12 +194,16 @@ async function main() {
     await jobStore.updateVideoJob(accepted.jobId, { stage: "cancelled" });
     const downloadCalls = [];
     let blockDownload = false;
+    let blockFirstMetadata = false;
     const youtubeSource = loadTypeScript("src/lib/video/youtube-source.ts", {
       "@/lib/env": env,
       "@/lib/video/paths": paths,
       "@/lib/video/yt-dlp-binary": { runYtDlp: async (args) => {
         downloadCalls.push(args);
-        if (args.includes("--dump-single-json")) return { stdout: JSON.stringify({ title: "Vídeo de teste", duration: 20, availability: "public" }) };
+        if (args.includes("--dump-single-json")) {
+          if (blockFirstMetadata && !args.includes("--force-ipv6")) throw Object.assign(new Error("429"), { stderr: "HTTP Error 429" });
+          return { stdout: JSON.stringify({ title: "Vídeo de teste", duration: 20, availability: "public" }) };
+        }
         await fs.writeFile(path.join(getJobDir(accepted.jobId), "source.mp4"), "synthetic video");
         if (blockDownload) throw Object.assign(new Error("/home/private/source.mp4"), { stderr: "HTTP Error 429: Too Many Requests" });
         return { stdout: "" };
@@ -208,6 +213,7 @@ async function main() {
     assert.equal(acquired.title, "Vídeo de teste");
     assert.equal(await paths.fileExists(acquired.sourcePath), true);
     assert.ok(downloadCalls.every((args) => args.includes("--js-runtimes") && args.includes("--no-playlist") && args.includes("youtube:player_client=web_embedded;player_skip=webpage")));
+    assert.ok(downloadCalls.every((args) => args.includes("--proxy=http://proxy.example:8080") && args.includes("--extractor-retries")));
     await fs.rm(acquired.sourcePath);
     blockDownload = true;
     await assert.rejects(youtubeSource.acquireYoutubeVideo(accepted.jobId, youtubeUrl, new AbortController().signal), (error) => {
@@ -216,6 +222,17 @@ async function main() {
       return true;
     });
     assert.equal(await paths.fileExists(path.join(getJobDir(accepted.jobId), "source.mp4")), false);
+    proxyUrl = undefined;
+    blockDownload = false;
+    blockFirstMetadata = true;
+    downloadCalls.length = 0;
+    const ipv6Acquired = await youtubeSource.acquireYoutubeVideo(accepted.jobId, youtubeUrl, new AbortController().signal);
+    assert.equal(await paths.fileExists(ipv6Acquired.sourcePath), true);
+    assert.ok(downloadCalls.some((args) => args.includes("--force-ipv6")));
+    assert.ok(downloadCalls.at(-1).includes("--force-ipv6"));
+    await fs.rm(ipv6Acquired.sourcePath);
+    proxyUrl = "file:///tmp/invalid";
+    await assert.rejects(youtubeSource.acquireYoutubeVideo(accepted.jobId, youtubeUrl, new AbortController().signal), /YTDLP_PROXY_URL inválida/);
 
     const legacyPublic = jobStore.toPublicJob(await jobStore.getStoredJob(legacy.jobId));
     assert.equal(legacyPublic.stage, "failed");

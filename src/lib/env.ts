@@ -71,6 +71,7 @@ const rawEnvSchema = z.object({
   CUT_OUTPUT_TTL_MINUTES: z.string().optional(),
   PROCESS_TIMEOUT_MS: z.string().optional(),
   YTDLP_BIN: z.string().optional(),
+  YTDLP_PROXY_URL: z.string().optional(),
   FFMPEG_BIN: z.string().optional(),
   FFPROBE_BIN: z.string().optional(),
   TEMP_UPLOAD_DIR: z.string().optional(),
@@ -118,6 +119,7 @@ type ParsedEnv = {
   cutOutputTtlMinutes: number;
   processTimeoutMs: number;
   ytDlpBin: string;
+  ytDlpProxyUrl?: string;
   ffmpegBin?: string;
   ffprobeBin?: string;
   tempUploadDir: string;
@@ -197,6 +199,7 @@ function readEnv(): ParsedEnv {
     cutOutputTtlMinutes: parsePositiveInt(parsed.CUT_OUTPUT_TTL_MINUTES, DEFAULTS.cutOutputTtlMinutes),
     processTimeoutMs: parsePositiveInt(parsed.PROCESS_TIMEOUT_MS, DEFAULTS.processTimeoutMs),
     ytDlpBin: normalizeOptionalString(parsed.YTDLP_BIN) ?? DEFAULTS.ytDlpBin,
+    ytDlpProxyUrl: normalizeOptionalString(parsed.YTDLP_PROXY_URL),
     ffmpegBin: normalizeOptionalString(parsed.FFMPEG_BIN),
     ffprobeBin: normalizeOptionalString(parsed.FFPROBE_BIN),
     tempUploadDir: normalizeOptionalString(parsed.TEMP_UPLOAD_DIR) ?? DEFAULTS.tempUploadDir,

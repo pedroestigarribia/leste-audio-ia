@@ -133,6 +133,7 @@ MAX_RENDER_CONCURRENCY=1
 CUT_OUTPUT_TTL_MINUTES=60
 PROCESS_TIMEOUT_MS=900000
 YTDLP_BIN=yt-dlp
+YTDLP_PROXY_URL=
 FFMPEG_BIN=
 FFPROBE_BIN=
 TEMP_UPLOAD_DIR=./tmp/uploads
@@ -573,7 +574,9 @@ sourceUrl=https://www.youtube.com/watch?v=...
 
 Formatos de upload: `.mp4`, `.mov`, `.webm` e `.m4v`. O vídeo obtido por URL também respeita `MAX_VIDEO_UPLOAD_MB=125` e `MAX_VIDEO_DURATION_SEC=7200`; só links públicos do YouTube são aceitos. O `yt-dlp` não é uma API oficial nem garante acesso: se o YouTube responder 429, exigir login ou bloquear o IP da hospedagem, não há como prometer o MP4 por código apenas. Nesse caso, envie o arquivo autorizado; para vídeos publicados por você, veja [como baixar pelo YouTube Studio](https://support.google.com/youtube/answer/56100?hl=pt-BR). Não configure cookies de contas de terceiros nem proxies não autorizados.
 
-O extrator usa o cliente de vídeo incorporado e omite a página inicial para reduzir requisições, como permite a [documentação do yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/master/README.md#youtube). Isso pode limitar vídeos que não permitem incorporação. A [FAQ do yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#http-error-429-too-many-requests-or-402-payment-required) explica que 429 pode ser bloqueio do IP; trocar de modelo de IA não resolve a obtenção dos bytes do vídeo.
+O extrator usa o cliente de vídeo incorporado e omite a página inicial para reduzir requisições, como permite a [documentação do yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/master/README.md#youtube). Isso pode limitar vídeos que não permitem incorporação. Se houver 429, faz uma única tentativa por IPv6 quando o servidor oferece essa saída. A [FAQ do yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#http-error-429-too-many-requests-or-402-payment-required) explica que 429 pode ser bloqueio do IP; trocar de modelo de IA não resolve a obtenção dos bytes do vídeo.
+
+Se a hospedagem receber 429 por bloqueio de IP, opcionalmente configure `YTDLP_PROXY_URL` apenas no servidor com um proxy HTTP, HTTPS ou SOCKS5 **seu e autorizado**, com saída liberada pelo YouTube. A variável nunca é enviada ao navegador nem deve ser versionada. Não use instâncias públicas aleatórias: elas podem registrar URLs ou dados de acesso e não garantem estabilidade. Esta configuração afeta somente a aquisição de vídeo para Cortes Inteligentes; sem proxy liberado, mantenha o upload de MP4. O extrator limita novas tentativas para falhar em tempo razoável quando o servidor está bloqueado.
 
 Teste de ponta a ponta com um vídeo público curto e autorizado: defina `CUT_TEST_ORIGIN=https://lesteaudio.space` e `CUT_TEST_YOUTUBE_URL=https://www.youtube.com/watch?v=...` no terminal e rode `node scripts/test-cuts-live.cjs`. O script cria um job temporário, exige transcrição/sugestão, gera MP4 e SRT, verifica os downloads e apaga o próprio job. Sem URL, ele testa o upload de um vídeo sintético local (Windows).
 
@@ -743,6 +746,7 @@ Checklist de deploy via GitHub:
    - `CUT_OUTPUT_TTL_MINUTES`
    - `PROCESS_TIMEOUT_MS`
    - `YTDLP_BIN`
+   - `YTDLP_PROXY_URL` (opcional, somente se houver um proxy próprio e autorizado)
    - `TEMP_UPLOAD_DIR`
 11. Configure o domínio `lesteaudio.space` para apontar para o projeto publicado.
 12. Verifique se o ambiente executa os binários empacotados `ffmpeg-static` e `@derhuerst/ffprobe-static`. O build Next.js inclui esses executáveis nas rotas de API, inclusive no modo standalone da Hostinger. Configure `FFPROBE_BIN` se preferir o FFprobe do sistema.
