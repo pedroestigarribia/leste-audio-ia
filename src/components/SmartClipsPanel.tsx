@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -10,9 +10,7 @@ import {
   Download,
   ExternalLink,
   Film,
-  PauseCircle,
   PlayCircle,
-  Search,
   Sparkles,
   Square,
   WandSparkles,
@@ -32,7 +30,7 @@ import type {
   VideoJobState,
 } from "@/types/video";
 
-type PublicOutput = Omit<RenderedClip, "filePath" | "srtPath">;
+type PublicOutput = Omit<RenderedClip, "filePath" | "srtPath" | "renderKey">;
 type PublicJob = Omit<VideoJobState, "outputs"> & { outputs: PublicOutput[] };
 
 type SourceMode = "upload" | "youtube";
@@ -115,13 +113,19 @@ function CandidateCard({
   candidate,
   selected,
   range,
+  title,
   onToggle,
+  onPreview,
+  onTitleChange,
   onRangeChange,
 }: {
   candidate: ClipCandidate;
   selected: boolean;
   range: EditRange;
+  title: string;
   onToggle: () => void;
+  onPreview: () => void;
+  onTitleChange: (value: string) => void;
   onRangeChange: (key: keyof EditRange, value: string) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -144,7 +148,9 @@ function CandidateCard({
             <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{candidate.category}</span>
             <span className="text-xs text-slate-500">{formatSeconds(candidate.startTime)} - {formatSeconds(candidate.endTime)}</span>
           </div>
-          <h3 className="mt-2 text-lg font-black text-slate-950">{candidate.title}</h3>
+          <label className="mt-2 block text-xs font-bold text-slate-600">Título do corte
+            <input aria-label={`Título do corte ${candidate.title}`} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-base font-black text-slate-950 outline-none focus:border-leste-blue focus:ring-2 focus:ring-blue-100" maxLength={120} onChange={(event) => onTitleChange(event.target.value)} value={title} />
+          </label>
           {candidate.topic ? <p className="mt-1 text-sm font-semibold text-leste-blue">Tema: {candidate.topic}</p> : null}
           <p className="mt-2 text-sm leading-6 text-slate-700">{candidate.summary || candidate.transcriptExcerpt}</p>
           {candidate.reason ? <p className="mt-3 rounded-xl bg-white/80 p-3 text-xs leading-5 text-slate-600"><strong>Por que este corte:</strong> {candidate.reason}</p> : null}
@@ -165,6 +171,7 @@ function CandidateCard({
           {detailsOpen ? "Ocultar análise" : "Ver análise"}
         </button>
       </div>
+      <button aria-label={`Pré-visualizar o trecho de ${title || candidate.title}`} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-leste-blue hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-leste-blue" onClick={onPreview} type="button"><PlayCircle className="h-4 w-4" /> Pré-visualizar trecho</button>
 
       {detailsOpen ? (
         <div className="mt-3 grid gap-3 rounded-xl bg-slate-950 p-4 text-xs text-slate-200 sm:grid-cols-2">
@@ -186,6 +193,7 @@ function OutputCard({ output, onCopy }: { output: PublicOutput; onCopy: (text: s
       <video className="aspect-video w-full bg-slate-950 object-contain" controls preload="metadata" src={output.downloadUrl} />
       <div className="space-y-3 p-4">
         <h3 className="font-black text-slate-950">{output.title}</h3>
+        {output.warnings?.length ? <ul className="list-disc space-y-1 pl-5 text-xs leading-5 text-amber-800">{output.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}
         <div className="flex flex-wrap gap-2">
           <a className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-leste-blue px-3 py-2 text-xs font-bold text-white hover:bg-blue-950" download href={output.downloadUrl}>
             <Download className="h-4 w-4" /> MP4
@@ -207,12 +215,42 @@ export default function SmartClipsPanel() {
   const [job, setJob] = useState<PublicJob | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [ranges, setRanges] = useState<Record<string, EditRange>>({});
+  const [titles, setTitles] = useState<Record<string, string>>({});
+  const [uploadedSource, setUploadedSource] = useState<{ jobId: string; file: File } | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewRange, setPreviewRange] = useState<{ start: number; end: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const previewStopAtRef = useRef<number | null>(null);
 
   const active = Boolean(job && ACTIVE_STAGES.has(job.stage) && job.stage !== "created");
+  const canPreview = Boolean(job && uploadedSource?.jobId === job.jobId && previewUrl);
   const selectedCandidates = useMemo(() => job?.candidates.filter((candidate) => selectedIds.includes(candidate.id)) ?? [], [job?.candidates, selectedIds]);
+
+  useEffect(() => {
+    if (!uploadedSource) return;
+    const url = URL.createObjectURL(uploadedSource.file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [uploadedSource]);
+
+  useEffect(() => {
+    const player = previewVideoRef.current;
+    if (!player || !previewRange || !previewUrl) return;
+    const startPreview = () => {
+      player.currentTime = previewRange.start;
+      void player.play().catch(() => setError("Não foi possível reproduzir a prévia neste navegador."));
+    };
+    if (player.readyState >= 1) {
+      startPreview();
+      return;
+    }
+    player.addEventListener("loadedmetadata", startPreview, { once: true });
+    return () => player.removeEventListener("loadedmetadata", startPreview);
+  }, [previewRange, previewUrl]);
 
   useEffect(() => {
     if (!job || !ACTIVE_STAGES.has(job.stage) || job.stage === "created") return;
@@ -241,39 +279,31 @@ export default function SmartClipsPanel() {
   }, [job]);
 
   useEffect(() => {
-    if (!job?.candidates.length || selectedIds.length) return;
-    const first = job.candidates[0];
-    setSelectedIds([first.id]);
-    setRanges(Object.fromEntries(job.candidates.map((candidate) => [candidate.id, { startTime: String(candidate.startTime.toFixed(1)), endTime: String(candidate.endTime.toFixed(1)) }])));
-  }, [job?.candidates, selectedIds.length]);
+    if (!job?.candidates.length) return;
+    setRanges((current) => Object.fromEntries(job.candidates.map((candidate) => [candidate.id, current[candidate.id] ?? { startTime: candidate.startTime.toFixed(1), endTime: candidate.endTime.toFixed(1) }])));
+    setTitles((current) => Object.fromEntries(job.candidates.map((candidate) => [candidate.id, current[candidate.id] ?? candidate.title])));
+    setSelectedIds((current) => current.length ? current : [job.candidates[0].id]);
+  }, [job?.candidates]);
 
   async function startAnalysis() {
     setError("");
-    if (sourceMode === "upload" && !file) {
-      setError("Selecione um vídeo MP4 para começar.");
-      return;
-    }
-    if (sourceMode === "youtube" && !youtubeUrl.trim()) {
-      setError("Informe um link público do YouTube.");
+    if (!file) {
+      setError("Selecione o arquivo de vídeo original ou autorizado para gerar os cortes. O link do YouTube é apenas uma referência.");
+      fileInputRef.current?.focus();
       return;
     }
 
     setLoading(true);
     try {
-      let created: { jobId?: string; job?: PublicJob };
-      if (sourceMode === "upload" && file) {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("preferences", JSON.stringify(preferences));
-        created = await fetchJson("/api/cuts/jobs", { body: formData, method: "POST" });
-      } else {
-        created = await fetchJson("/api/cuts/jobs", {
-          body: JSON.stringify({ sourceType: "youtube", url: youtubeUrl, preferences }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
-        });
-      }
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("preferences", JSON.stringify(preferences));
+      if (sourceMode === "youtube" && youtubeUrl.trim()) formData.append("sourceUrl", youtubeUrl.trim());
+      const created = await fetchJson("/api/cuts/jobs", { body: formData, method: "POST" });
       if (!created.jobId || !created.job) throw new Error("A API não retornou o job criado.");
+      setUploadedSource({ jobId: created.jobId, file });
+      setPreviewRange(null);
+      previewStopAtRef.current = null;
       setJob(created.job);
       const started = await fetchJson(`/api/cuts/jobs/${created.jobId}/analyze`, {
         body: JSON.stringify({ preferences }),
@@ -301,6 +331,41 @@ export default function SmartClipsPanel() {
     }
   }
 
+  async function resumeJob() {
+    if (!job?.recoverableAction) return;
+    setError("");
+    setLoading(true);
+    try {
+      const data = await fetchJson(`/api/cuts/jobs/${job.jobId}/${job.recoverableAction === "render" ? "render" : "analyze"}`, {
+        body: JSON.stringify(job.recoverableAction === "render" ? { resume: true } : { preferences: job.preferences }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (data.job) setJob(data.job);
+    } catch (resumeError) {
+      setError(resumeError instanceof Error ? resumeError.message : "Não foi possível retomar o processamento.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function previewCandidate(candidate: ClipCandidate) {
+    if (!job || !canPreview) {
+      setError("A prévia está disponível para o arquivo de vídeo enviado nesta sessão.");
+      return;
+    }
+    const duration = job.metadata?.durationSec ?? candidate.endTime;
+    const start = Math.max(0, Math.min(duration, Number(ranges[candidate.id]?.startTime ?? candidate.startTime)));
+    const end = Math.max(0, Math.min(duration, Number(ranges[candidate.id]?.endTime ?? candidate.endTime)));
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end - start < 1) {
+      setError("Ajuste início e fim para pré-visualizar um intervalo válido.");
+      return;
+    }
+    setError("");
+    previewStopAtRef.current = end;
+    setPreviewRange({ start, end });
+  }
+
   async function renderSelected() {
     if (!job || !selectedCandidates.length) {
       setError("Selecione pelo menos um corte para gerar o vídeo.");
@@ -315,6 +380,7 @@ export default function SmartClipsPanel() {
             candidateId: candidate.id,
             startTime: Number(ranges[candidate.id]?.startTime ?? candidate.startTime),
             endTime: Number(ranges[candidate.id]?.endTime ?? candidate.endTime),
+            title: titles[candidate.id] ?? candidate.title,
           })),
           options: renderOptions,
         }),
@@ -353,7 +419,7 @@ export default function SmartClipsPanel() {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-leste-gold px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-slate-950"><Clapperboard className="h-4 w-4" /> Produto de vídeo</div>
           <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Cortes Inteligentes</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Envie um vídeo ou use um link público do YouTube. A análise encontra trechos independentes, explica a escolha e prepara arquivos para redes sociais sem prometer viralização.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Envie um vídeo autorizado para encontrar, revisar e exportar cortes para redes sociais. Um link do YouTube pode ser anexado apenas como referência; o sistema não baixa o vídeo pelo link.</p>
         </div>
         <a className="inline-flex items-center gap-2 text-sm font-bold text-leste-blue hover:underline" href="#audio-pdf"><ExternalLink className="h-4 w-4" /> Voltar aos conteúdos</a>
       </div>
@@ -362,21 +428,21 @@ export default function SmartClipsPanel() {
         <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
           <div className="flex flex-wrap gap-2">
             <button className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold ${sourceMode === "upload" ? "bg-leste-blue text-white" : "border border-blue-200 text-leste-blue"}`} onClick={() => setSourceMode("upload")} type="button"><Film className="h-4 w-4" /> Enviar vídeo</button>
-            <button className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold ${sourceMode === "youtube" ? "bg-leste-blue text-white" : "border border-blue-200 text-leste-blue"}`} onClick={() => setSourceMode("youtube")} type="button"><ExternalLink className="h-4 w-4" /> Link do YouTube</button>
+            <button className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold ${sourceMode === "youtube" ? "bg-leste-blue text-white" : "border border-blue-200 text-leste-blue"}`} onClick={() => setSourceMode("youtube")} type="button"><ExternalLink className="h-4 w-4" /> YouTube como referência</button>
           </div>
 
-          {sourceMode === "upload" ? (
-            <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/50 p-5 text-center hover:border-leste-blue">
-              <Film className="h-8 w-8 text-leste-blue" />
-              <span className="mt-2 text-sm font-black text-slate-950">{file ? file.name : "Escolha ou arraste um vídeo"}</span>
-              <span className="mt-1 text-xs text-slate-600">MP4 recomendado, também aceita MOV, WEBM e M4V. Limite configurável do produto.</span>
-              <input accept="video/mp4,video/quicktime,video/webm,video/x-m4v" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] ?? null)} type="file" />
-            </label>
-          ) : (
-            <label className="block text-sm font-bold text-slate-700">URL pública do YouTube
+          <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/50 p-5 text-center focus-within:ring-2 focus-within:ring-leste-blue hover:border-leste-blue" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setFile(event.dataTransfer.files[0] ?? null); }}>
+            <Film className="h-8 w-8 text-leste-blue" />
+            <span className="mt-2 max-w-full break-words [overflow-wrap:anywhere] text-sm font-black text-slate-950">{file ? file.name : "Escolha ou arraste o arquivo original"}</span>
+            <span className="mt-1 text-xs text-slate-600">MP4 recomendado; também aceita MOV, WEBM e M4V. Limite configurável do produto.</span>
+            <input accept=".mp4,.mov,.webm,.m4v,video/mp4,video/quicktime,video/webm,video/x-m4v" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] ?? null)} ref={fileInputRef} type="file" />
+          </label>
+          {sourceMode === "youtube" ? <div className="space-y-2">
+            <label className="block text-sm font-bold text-slate-700">Link do YouTube para referência (opcional)
               <input className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-sm font-normal text-slate-950 outline-none focus:border-leste-blue focus:ring-2 focus:ring-blue-100" onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=..." type="url" value={youtubeUrl} />
             </label>
-          )}
+            <p className="text-xs leading-5 text-slate-600">Envie o arquivo original acima. Se o vídeo for seu, veja <a className="font-bold text-leste-blue underline" href="https://support.google.com/youtube/answer/56100?hl=pt-BR" rel="noreferrer" target="_blank">como baixar o MP4 pelo YouTube Studio</a>.</p>
+          </div> : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-bold text-slate-600">Modo
@@ -405,7 +471,7 @@ export default function SmartClipsPanel() {
 
         <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white sm:p-5">
           <div><p className="text-xs font-black uppercase tracking-[0.15em] text-leste-gold">Saída editorial</p><h3 className="mt-2 text-xl font-black">Como o corte será preparado</h3></div>
-          <ul className="space-y-3 text-sm leading-6 text-slate-300"><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Transcrição com intervalos temporais e participantes quando identificáveis.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Temas, ganchos, clareza, valor prático, final e riscos explicados.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Você revisa os pontos de início e fim antes de renderizar.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> MP4 com legenda queimada e arquivo SRT separado.</li></ul>
+          <ul className="space-y-3 text-sm leading-6 text-slate-300"><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Transcrição temporal e temas extraídos do vídeo enviado.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Ganchos, clareza, valor prático, conclusão e avisos explicados.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Revise o trecho, o título e os pontos de início e fim.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> MP4 e SRT; a tela informa se a legenda não puder ser incorporada.</li></ul>
           <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs leading-5 text-slate-400">O arquivo original e as saídas são temporários no servidor. As saídas expiram conforme <code className="text-slate-200">CUT_OUTPUT_TTL_MINUTES</code>.</div>
         </div>
       </div>
@@ -413,13 +479,16 @@ export default function SmartClipsPanel() {
       {error ? <ErrorBox message={error} /> : null}
 
       {job ? <div className="space-y-5 rounded-2xl border border-blue-100 bg-white p-4 sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-black uppercase tracking-[0.15em] text-leste-blue">{job.sourceName}</p><h3 className="mt-1 text-xl font-black text-slate-950">{STAGE_LABELS[job.stage]}</h3><p className="mt-1 text-sm text-slate-600">{job.message}</p></div><span className={`rounded-full px-3 py-1 text-xs font-black ${job.stage === "failed" ? "bg-red-100 text-red-700" : job.stage === "completed" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-leste-blue"}`}>{job.progress}%</span></div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><p className="break-words [overflow-wrap:anywhere] text-xs font-black uppercase tracking-[0.15em] text-leste-blue">{job.sourceName}</p><h3 className="mt-1 text-xl font-black text-slate-950">{STAGE_LABELS[job.stage]}</h3><p className="mt-1 text-sm text-slate-600">{job.message}</p></div><span className={`rounded-full px-3 py-1 text-xs font-black ${job.stage === "failed" ? "bg-red-100 text-red-700" : job.stage === "completed" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-leste-blue"}`}>{job.progress}%</span></div>
         <ProgressBar label="Progresso do processamento" value={job.progress} />
         {job.error ? <ErrorBox message={job.error} /> : null}
+        {job.stage === "failed" && job.recoverableAction ? <ActionButton disabled={loading} loading={loading} onClick={() => { void resumeJob(); }} type="button" variant="secondary"><WandSparkles className="h-4 w-4" /> Retomar {job.recoverableAction === "render" ? "cortes pendentes" : "análise"}</ActionButton> : null}
 
-        {job.candidates.length ? <div className="space-y-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="text-lg font-black text-slate-950">Candidatos encontrados</h3><p className="text-sm text-slate-600">{selectedCandidates.length} selecionado(s) para renderização.</p></div><ActionButton disabled={!selectedCandidates.length || active} loading={loading} onClick={() => { void renderSelected(); }} type="button" variant="secondary"><WandSparkles className="h-4 w-4" /> Gerar cortes selecionados</ActionButton></div><div className="grid gap-4 xl:grid-cols-2">{job.candidates.map((candidate) => <CandidateCard candidate={candidate} key={candidate.id} onRangeChange={(key, value) => setRanges((current) => ({ ...current, [candidate.id]: { ...(current[candidate.id] ?? { startTime: String(candidate.startTime), endTime: String(candidate.endTime) }), [key]: value } }))} onToggle={() => selectCandidate(candidate.id)} range={ranges[candidate.id] ?? { startTime: String(candidate.startTime.toFixed(1)), endTime: String(candidate.endTime.toFixed(1)) }} selected={selectedIds.includes(candidate.id)} />)}</div></div> : null}
+        {previewRange && canPreview ? <div className="space-y-2 rounded-2xl border border-blue-100 bg-slate-950 p-3"><div className="flex items-center justify-between gap-3 text-sm font-bold text-white"><span>Prévia do trecho {formatSeconds(previewRange.start)}–{formatSeconds(previewRange.end)}</span><button className="rounded-lg px-3 py-1 text-xs text-slate-300 hover:bg-white/10" onClick={() => { previewVideoRef.current?.pause(); previewStopAtRef.current = null; setPreviewRange(null); }} type="button">Fechar prévia</button></div><video className="max-h-[60vh] w-full rounded-xl bg-black" controls playsInline preload="metadata" ref={previewVideoRef} src={previewUrl} onTimeUpdate={(event) => { const player = event.currentTarget; if (previewStopAtRef.current !== null && player.currentTime >= previewStopAtRef.current) { player.pause(); previewStopAtRef.current = null; } }} /></div> : null}
 
-        {job.candidates.length ? <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3"><label className="text-xs font-bold text-slate-600">Formato<select className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950" onChange={(event) => setRenderOptions((current) => ({ ...current, aspectRatio: event.target.value as AspectRatio }))} value={renderOptions.aspectRatio}><option value="9:16">Vertical 9:16</option><option value="1:1">Quadrado 1:1</option><option value="16:9">Horizontal 16:9</option></select></label><label className="text-xs font-bold text-slate-600">Legendas<select className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950" onChange={(event) => setRenderOptions((current) => ({ ...current, captionPreset: event.target.value as CaptionPreset }))} value={renderOptions.captionPreset}><option value="simple">Simples</option><option value="dynamic">Dinâmicas</option><option value="none">Sem legenda</option></select></label><label className="text-xs font-bold text-slate-600">Reenquadramento<select className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950" onChange={(event) => setRenderOptions((current) => ({ ...current, reframeMode: event.target.value as RenderOptions["reframeMode"] }))} value={renderOptions.reframeMode}><option value="center">Centralizado</option><option value="face">Rosto (planejado)</option><option value="speaker">Pessoa falando (planejado)</option><option value="subject">Assunto (planejado)</option><option value="screen">Tela (planejado)</option></select></label></div> : null}
+        {job.candidates.length ? <div className="space-y-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="text-lg font-black text-slate-950">Candidatos encontrados</h3><p className="text-sm text-slate-600">{selectedCandidates.length} selecionado(s) para renderização.</p></div><ActionButton disabled={!selectedCandidates.length || active} loading={loading} onClick={() => { void renderSelected(); }} type="button" variant="secondary"><WandSparkles className="h-4 w-4" /> Gerar cortes selecionados</ActionButton></div><div className="grid gap-4 xl:grid-cols-2">{job.candidates.map((candidate) => <CandidateCard candidate={candidate} key={candidate.id} onPreview={() => previewCandidate(candidate)} onTitleChange={(value) => setTitles((current) => ({ ...current, [candidate.id]: value }))} title={titles[candidate.id] ?? candidate.title} onRangeChange={(key, value) => setRanges((current) => ({ ...current, [candidate.id]: { ...(current[candidate.id] ?? { startTime: String(candidate.startTime), endTime: String(candidate.endTime) }), [key]: value } }))} onToggle={() => selectCandidate(candidate.id)} range={ranges[candidate.id] ?? { startTime: String(candidate.startTime.toFixed(1)), endTime: String(candidate.endTime.toFixed(1)) }} selected={selectedIds.includes(candidate.id)} />)}</div></div> : null}
+
+        {job.candidates.length ? <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3"><label className="text-xs font-bold text-slate-600">Formato<select className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950" onChange={(event) => setRenderOptions((current) => ({ ...current, aspectRatio: event.target.value as AspectRatio }))} value={renderOptions.aspectRatio}><option value="9:16">Vertical 9:16</option><option value="1:1">Quadrado 1:1</option><option value="16:9">Horizontal 16:9</option></select></label><label className="text-xs font-bold text-slate-600">Legendas<select className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950" onChange={(event) => setRenderOptions((current) => ({ ...current, captionPreset: event.target.value as CaptionPreset }))} value={renderOptions.captionPreset}><option value="simple">Simples</option><option value="dynamic">Dinâmicas</option><option value="none">Sem legenda</option></select></label><label className="text-xs font-bold text-slate-600">Reenquadramento<select className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950" onChange={(event) => setRenderOptions((current) => ({ ...current, reframeMode: event.target.value as RenderOptions["reframeMode"] }))} value={renderOptions.reframeMode}><option value="center">Centralizado</option><option value="face">Rosto (IA por amostragem)</option><option value="speaker">Pessoa falando (estimativa)</option><option value="subject">Assunto principal (estimativa)</option><option value="screen">Tela / apresentação</option></select></label><p className="text-xs leading-5 text-slate-500 sm:col-span-3">O enquadramento analisa quadros amostrados, não acompanha movimento quadro a quadro; se não houver alvo confiável, o centro é usado e o resultado informa o aviso.</p></div> : null}
 
         {job.outputs.length ? <div className="space-y-4"><div><h3 className="text-lg font-black text-slate-950">Cortes gerados</h3><p className="text-sm text-slate-600">Assista no painel, baixe o MP4 ou use o SRT em outro editor.</p></div><div className="grid gap-4 lg:grid-cols-2">{job.outputs.map((output) => <OutputCard key={output.id} onCopy={(text) => { void copyText(text); }} output={output} />)}</div></div> : null}
       </div> : null}

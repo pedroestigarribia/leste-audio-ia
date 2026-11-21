@@ -14,7 +14,6 @@ const nextConfig = {
       "./node_modules/@derhuerst/ffprobe-static/ffprobe*",
     ],
     "/api/transcribe-url": ["./node_modules/youtube-dl-exec/bin/**/*"],
-    "/api/cuts/**": ["./node_modules/youtube-dl-exec/bin/**/*"],
   },
   async headers() {
     return [

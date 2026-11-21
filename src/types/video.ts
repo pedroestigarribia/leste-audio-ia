@@ -146,6 +146,9 @@ export type RenderedClip = {
   srtDownloadUrl?: string;
   createdAt: string;
   expiresAt: string;
+  captionsBurned?: boolean;
+  renderKey?: string;
+  warnings?: string[];
 };
 
 export type JobStage =
@@ -187,6 +190,8 @@ export type VideoJobState = JobProgress & {
     participants: Participant[];
   };
   semanticSegments?: SemanticSegment[];
+  sceneMarkers?: number[];
   candidates: ClipCandidate[];
   outputs: RenderedClip[];
+  recoverableAction?: "analyze" | "render";
 };

@@ -12,12 +12,30 @@ import { detectSceneChanges } from "@/lib/video/scenes";
 import { transcribeVideoStructured } from "@/lib/video/transcript";
 import type { YoutubeGeminiResult } from "@/types/youtube";
 
+export async function extractVideoFrames(videoPath: string, frameTimes: number[]) {
+  if (!frameTimes.length) return [];
+  const tempDir = await fs.mkdtemp(path.join(await ensureTempDir(), "openai-video-frames-"));
+  try {
+    const images: Array<{ time: number; dataUrl: string }> = [];
+
+    for (let index = 0; index < frameTimes.length; index += 1) {
+      const filePath = path.join(tempDir, `frame-${index + 1}.jpg`);
+      await runFfmpeg([
+        "-hide_banner", "-loglevel", "error", "-ss", String(frameTimes[index]),
+        "-i", videoPath, "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "5", filePath,
+      ]);
+      images.push({ time: frameTimes[index], dataUrl: `data:image/jpeg;base64,${(await fs.readFile(filePath)).toString("base64")}` });
+    }
+    return images;
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
 async function describeSampledFrames(videoPath: string | null, title: string, durationSec: number) {
   if (!videoPath || durationSec <= 0) return "";
 
-  let tempDir = "";
   try {
-    tempDir = await fs.mkdtemp(path.join(await ensureTempDir(), "openai-video-frames-"));
     const sceneMarkers = await detectSceneChanges(videoPath, durationSec);
     const count = Math.min(8, sceneMarkers.length);
     const frameTimes = Array.from({ length: count }, (_, index) => {
@@ -26,16 +44,7 @@ async function describeSampledFrames(videoPath: string | null, title: string, du
         : Math.round(index * (sceneMarkers.length - 1) / (count - 1));
       return Math.max(0, Math.min(durationSec - 0.1, sceneMarkers[markerIndex] + 0.25));
     });
-    const images: Array<{ time: number; base64: string }> = [];
-
-    for (let index = 0; index < frameTimes.length; index += 1) {
-      const filePath = path.join(tempDir, `frame-${index + 1}.jpg`);
-      await runFfmpeg([
-        "-hide_banner", "-loglevel", "error", "-ss", String(frameTimes[index]),
-        "-i", videoPath, "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "5", filePath,
-      ]);
-      images.push({ time: frameTimes[index], base64: (await fs.readFile(filePath)).toString("base64") });
-    }
+    const images = await extractVideoFrames(videoPath, frameTimes);
 
     if (!images.length) return "";
     const client = new OpenAI({ apiKey: requireOpenAIApiKey(), maxRetries: 0, timeout: 120_000 });
@@ -48,7 +57,7 @@ async function describeSampledFrames(videoPath: string | null, title: string, du
           { type: "input_text", text: `Título (metadado): ${JSON.stringify(title)}. Foram selecionados ${images.length} quadros representativos por detecção de mudança de cena; esta amostra não representa todos os quadros.` },
           ...images.flatMap((image) => [
             { type: "input_text" as const, text: `Quadro aproximado em ${formatTime(image.time)}.` },
-            { type: "input_image" as const, image_url: `data:image/jpeg;base64,${image.base64}`, detail: "low" as const },
+            { type: "input_image" as const, image_url: image.dataUrl, detail: "low" as const },
           ]),
         ],
       }],
@@ -56,8 +65,6 @@ async function describeSampledFrames(videoPath: string | null, title: string, du
     return normalizePlainText(response.output_text ?? "");
   } catch {
     return "";
-  } finally {
-    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 

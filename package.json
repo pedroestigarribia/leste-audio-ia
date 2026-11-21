@@ -18,6 +18,7 @@
     "test:voice": "node scripts/test-voice-live.cjs",
     "test:voice:audio": "node scripts/test-voice-audio.cjs",
     "test:openai-audio-prep": "node scripts/test-openai-audio-prep.cjs",
+    "test:smart-clips": "node scripts/test-smart-clips.cjs",
     "backup:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup-leste-audio-ia.ps1",
     "package:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/empacotar-leste-audio-ia.ps1",
     "package:windows:private": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/empacotar-leste-audio-ia.ps1 -IncludeLocalEnv -OutputPath leste-audio-ia-distribuicao-privada.zip"
@@ -33,7 +34,7 @@
     "lucide-react": "^0.468.0",
     "mammoth": "^1.13.0",
     "nanoid": "^5.0.9",
-    "next": "^15.5.27",
+    "next": "^15.5.29",
     "openai": "^4.76.0",
     "pdf-parse": "^1.1.1",
     "react": "^19.3.0",

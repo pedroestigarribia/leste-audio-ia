@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { enqueueVideoJob, getStoredJob, toPublicJob, updateVideoJob } from "@/lib/video/job-store";
+import { enqueueVideoJob, getStoredJob, requiresYoutubeUpload, toPublicJob, updateVideoJob, YOUTUBE_CUT_UPLOAD_REQUIRED } from "@/lib/video/job-store";
 import { processVideoJob } from "@/lib/video/pipeline";
 import { assertSafeJobId } from "@/lib/video/paths";
 import { normalizeClipPreferences } from "@/lib/video/preferences";
@@ -18,6 +18,9 @@ export async function POST(request: Request, context: RouteContext) {
     assertSafeJobId(jobId);
     const current = await getStoredJob(jobId);
     if (!current) return Response.json({ ok: false, error: "Job de vídeo não encontrado." }, { status: 404 });
+    if (requiresYoutubeUpload(current)) {
+      return Response.json({ ok: false, error: YOUTUBE_CUT_UPLOAD_REQUIRED }, { status: 422 });
+    }
     if (["validating", "acquiring", "probing", "extracting_audio", "transcribing", "analyzing_scenes", "analyzing_semantics", "generating_candidates", "ranking_candidates", "rendering"].includes(current.stage)) {
       return Response.json({ ok: true, jobId: current.jobId, job: toPublicJob(current), started: false });
     }
@@ -30,6 +33,8 @@ export async function POST(request: Request, context: RouteContext) {
       progress: 1,
       message: "Processamento iniciado.",
       error: undefined,
+      pendingAction: "analyze",
+      pendingRender: undefined,
     });
     void enqueueVideoJob(jobId, (signal) => processVideoJob(jobId, signal));
     return Response.json({ ok: true, jobId: prepared.jobId, job: toPublicJob(prepared), started: true }, { status: 202 });

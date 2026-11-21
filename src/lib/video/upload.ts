@@ -73,6 +73,7 @@ export async function saveVideoUploadFromMultipart(request: Request, jobId: stri
   let currentPart = "";
   let fieldValue = "";
   let preferencesValue: string | undefined;
+  let sourceUrlValue: string | undefined;
   let completed = false;
 
   async function writeFileChunk(chunk: Buffer) {
@@ -90,12 +91,15 @@ export async function saveVideoUploadFromMultipart(request: Request, jobId: stri
       fileHandle = undefined;
     }
     if (currentPart === "preferences" && fieldValue.length <= 100_000) preferencesValue = fieldValue;
+    if (currentPart === "sourceUrl" && fieldValue.length <= 2_000) sourceUrlValue = fieldValue.trim();
     fieldValue = "";
   }
 
   async function consumeBodyChunk(chunk: Buffer) {
     if (fileHandle) await writeFileChunk(chunk);
-    else if (currentPart === "preferences" && fieldValue.length < 100_000) fieldValue += chunk.toString("utf8");
+    else if ((currentPart === "preferences" && fieldValue.length < 100_000) || (currentPart === "sourceUrl" && fieldValue.length < 2_000)) {
+      fieldValue += chunk.toString("utf8");
+    }
   }
 
   try {
@@ -173,9 +177,8 @@ export async function saveVideoUploadFromMultipart(request: Request, jobId: stri
       }
     }
 
-    await closePart();
     if (!sourcePath || !originalName || fileSize <= 0) throw new Error("Nenhum arquivo de vídeo foi recebido.");
-    return { sourcePath, originalName, mimeType, size: fileSize, preferences: preferencesValue };
+    return { sourcePath, originalName, mimeType, size: fileSize, preferences: preferencesValue, sourceUrl: sourceUrlValue };
   } catch (error) {
     await fileHandle?.close().catch(() => undefined);
     await fs.rm(sourcePath, { force: true }).catch(() => undefined);

@@ -245,7 +245,7 @@ O ZIP é salvo em `Downloads` com data e hora no nome. Ele exclui `node_modules`
 
 Também é possível executar `iniciar-leste-audio-ia.cmd` diretamente. Ele instala dependências se necessário, verifica a página e abre o navegador em uma porta livre entre `3000` e `3010`.
 
-`npm install` instala `ffmpeg-static` e `@derhuerst/ffprobe-static`; o app também aceita os binários do sistema via `FFMPEG_BIN` e `FFPROBE_BIN`. A transcrição por link do Instagram/YouTube usa o binário `yt-dlp` baixado por `youtube-dl-exec` e executado pelo `child_process` do Node.js. O instalador normalmente verifica Python; em Linux sem Python, configure `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux` para baixar o executável autossuficiente oficial. Não use `YOUTUBE_DL_FILENAME=yt-dlp_linux` no Windows. `YTDLP_BIN` pode apontar para um binário compatível instalado no sistema. Para `Cortes Inteligentes`, mantenha `yt-dlp` disponível no servidor, pois esse fluxo também pode usar o executável do sistema. O upload local não depende das plataformas.
+`npm install` instala `ffmpeg-static` e `@derhuerst/ffprobe-static`; o app também aceita os binários do sistema via `FFMPEG_BIN` e `FFPROBE_BIN`. A transcrição por link do Instagram/YouTube usa o binário `yt-dlp` baixado por `youtube-dl-exec` e executado pelo `child_process` do Node.js. O instalador normalmente verifica Python; em Linux sem Python, configure `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux` para baixar o executável autossuficiente oficial. Não use `YOUTUBE_DL_FILENAME=yt-dlp_linux` no Windows. `YTDLP_BIN` pode apontar para um binário compatível instalado no sistema. `Cortes Inteligentes` requer upload do vídeo original autorizado; a URL do YouTube é apenas referência e não é baixada nesse fluxo.
 
 ### Diretórios de build separados
 
@@ -299,9 +299,9 @@ Domínio:
 16. PDFs com texto pesquisável e arquivos DOCX são divididos em capítulos para audiobook. A geração ocorre em fila, um capítulo por vez, para evitar uma requisição longa e permitir retomar apenas o capítulo que falhar.
 17. Em cada áudio transcrito, a análise automática identifica assunto, contexto, intenção, temas, insights, tarefas, decisões, dados-chave, riscos, oportunidades e estrutura narrativa a partir do arquivo original.
 18. Depois da análise, também é possível gerar artigo, copy, post, roteiro, storytelling, resposta para WhatsApp, plano de negócios ou estratégia de marketing. Todo resultado pode ser copiado, baixado em DOCX, ouvido com a voz da Milena e baixado em MP3.
-19. A área `Cortes Inteligentes` aceita MP4/MOV/WEBM/M4V, processa o vídeo em job assíncrono, mostra cada etapa, permite cancelar, encontra trechos por descoberta ou busca semântica e oferece revisão manual dos intervalos.
+19. A área `Cortes Inteligentes` aceita MP4/MOV/WEBM/M4V, processa o vídeo em job assíncrono, mostra cada etapa, permite cancelar, encontra trechos por descoberta ou busca semântica e oferece revisão manual do título e dos intervalos. Links do YouTube são apenas referências; o arquivo original autorizado precisa ser enviado.
 20. Cada candidato de corte recebe título, tema, trecho, score heurístico de retenção, critérios, legenda, copy, hashtags, participantes, confiança e alertas para revisão.
-21. O usuário escolhe cortes, formato 9:16/1:1/16:9, legenda simples/dinâmica ou sem legenda e reenquadramento base. O renderizador entrega MP4 para assistir/baixar e SRT separado.
+21. O usuário escolhe cortes, formato 9:16/1:1/16:9, legenda simples/dinâmica ou sem legenda e reenquadramento central ou assistido por análise de quadros. Há prévia local do trecho e retomada de renderização parcial sem duplicar saídas concluídas.
 
 ## Escuta ao vivo e interpretação da voz
 
@@ -559,28 +559,23 @@ O módulo de vídeo usa jobs temporários em `tmp/cuts/<jobId>`. O estado públi
 
 #### `POST /api/cuts/jobs`
 
-Para upload, envie `multipart/form-data` com o campo `file` e, opcionalmente, `preferences` como JSON. Para YouTube, envie JSON:
+Envie `multipart/form-data` com o campo `file` e, opcionalmente, `preferences` como JSON e `sourceUrl` para associar um link do YouTube apenas como referência. Um pedido JSON com `sourceType: "youtube"` valida o endereço e responde `422`; nenhum job ou download é iniciado.
 
-```json
-{
-  "sourceType": "youtube",
-  "url": "https://www.youtube.com/watch?v=...",
-  "preferences": {
-    "mode": "discover",
-    "genre": "Podcast",
-    "durationPreset": "30-60",
-    "desiredCount": 8
-  }
-}
+```text
+file=<arquivo original>
+preferences={"mode":"discover","genre":"Podcast","durationPreset":"30-60","desiredCount":8}
+sourceUrl=https://www.youtube.com/watch?v=...
 ```
 
-O retorno é `201` com `jobId` e estado inicial. Formatos locais: `.mp4`, `.mov`, `.webm` e `.m4v`. O limite padrão é `MAX_VIDEO_UPLOAD_MB=125`; a duração padrão máxima é `MAX_VIDEO_DURATION_SEC=7200`.
+O upload retorna `201` com `jobId` e estado inicial. Formatos aceitos: `.mp4`, `.mov`, `.webm` e `.m4v`. O limite padrão é `MAX_VIDEO_UPLOAD_MB=125`; a duração padrão máxima é `MAX_VIDEO_DURATION_SEC=7200`. O link não fornece mídia para processamento.
+
+Se uma versão anterior mostrar `Status code: 429` ao tentar baixar pelo link, use **Enviar vídeo** e selecione o original autorizado. Para vídeos que você publicou, o [YouTube Studio permite baixar o MP4](https://support.google.com/youtube/answer/56100?hl=pt-BR). Jobs antigos que só têm o link não são retomados nem ocupam vagas da fila; crie um novo job com o arquivo. Se localhost já mostrar **YouTube como referência** mas o domínio publicado ainda oferecer cortes só por link, a hospedagem ainda precisa receber a versão corrigida.
 
 #### `POST /api/cuts/jobs/:jobId/analyze`
 
 Inicia o processamento em segundo plano e retorna `202`. O frontend consulta `GET /api/cuts/jobs/:jobId` até `ready_for_review`, `completed`, `failed` ou `cancelled`.
 
-Etapas: validar, adquirir, sondar metadados, extrair áudio mono 16 kHz, transcrever, detectar cenas, analisar semântica, gerar candidatos e pontuar diversidade/retensão. O primeiro downloader é `yt-dlp`; `@distube/ytdl-core` é fallback para links HTTPS públicos do YouTube.
+Etapas: validar o upload, sondar metadados, extrair áudio mono 16 kHz, transcrever com timestamps por segmento e palavra, detectar cenas, analisar semântica, gerar candidatos e pontuar diversidade/retenção. Os timestamps por palavra usam atualmente `whisper-1`; planeje a migração antes do encerramento anunciado para 26/02/2027.
 
 #### `POST /api/cuts/jobs/:jobId/render`
 
@@ -588,12 +583,14 @@ Recebe os candidatos escolhidos, possíveis ajustes de início/fim e opções de
 
 ```json
 {
-  "clips": [{ "candidateId": "candidate-...", "startTime": 12.4, "endTime": 58.1 }],
+  "clips": [{ "candidateId": "candidate-...", "startTime": 12.4, "endTime": 58.1, "title": "Título revisado" }],
   "options": { "aspectRatio": "9:16", "captionPreset": "simple", "reframeMode": "center" }
 }
 ```
 
-O MP4 usa H.264/AAC, `yuv420p` e `faststart`, com SRT separado. Se a build do FFmpeg não tiver libass, o MP4 é gerado sem legenda queimada e o SRT continua disponível.
+O MP4 usa H.264/AAC, `yuv420p` e `faststart`, com SRT separado. Se a build do FFmpeg não tiver libass, o MP4 é gerado sem legenda queimada e o SRT continua disponível. A legenda dinâmica usa timestamps por palavra e volta aos segmentos quando eles não estão disponíveis.
+
+Para retomar uma renderização interrompida, envie `{ "resume": true }`. As saídas já concluídas são preservadas e não são renderizadas novamente. Jobs ativos sem processo por mais que `PROCESS_TIMEOUT_MS` são marcados como interrompidos na próxima consulta; jobs e arquivos expiram conforme `CUT_OUTPUT_TTL_MINUTES`.
 
 #### Outros endpoints
 
@@ -606,11 +603,11 @@ O MP4 usa H.264/AAC, `yuv420p` e `faststart`, com SRT separado. Se a build do FF
 
 - `ffmpeg-static` cobre o FFmpeg no Node.js; `FFMPEG_BIN` pode apontar para uma instalação do sistema.
 - FFprobe é necessário para duração e streams. Configure `FFPROBE_BIN` quando o executável não estiver no PATH.
-- `yt-dlp` é recomendado para YouTube. Configure `YTDLP_BIN` quando o comando não estiver no PATH. O fallback do SDK pode continuar sujeito a bloqueios do YouTube.
+- `yt-dlp` atende apenas aos fluxos separados de importação/transcrição por link; não é necessário em `Cortes Inteligentes`, que processa o vídeo enviado.
 - Se o `yt-dlp` não conseguir obter a mídia, o app retorna erro e pede o upload manual do arquivo; não envia URL para um provedor de IA como fallback.
 - A entrada principal também aceita links diretos de Reels e vídeos do Instagram por `POST /api/transcribe-url`; o extractor do `yt-dlp` é best-effort e alguns Reels públicos podem exigir login, ser limitados ou deixar de funcionar após mudanças da plataforma. O app não usa cookies nem contorna essas restrições.
 - Links privados, vídeos com login, lives indisponíveis e conteúdos protegidos podem ser recusados; nesse caso, envie o arquivo MP4.
-- Use links apenas de conteúdo próprio ou para o qual você tenha autorização. A extração de mídia pode estar sujeita aos termos da plataforma e aos direitos autorais; a integração de link não é uma API oficial de download do YouTube/Instagram.
+- Use uploads apenas de conteúdo próprio ou para o qual você tenha autorização. `sourceUrl` em `Cortes Inteligentes` é apenas uma referência. Os outros fluxos de importação por link continuam sujeitos à disponibilidade e aos termos da plataforma e não são APIs oficiais de download.
 
 ## Formatos aceitos
 
@@ -793,6 +790,7 @@ O projeto tambem inclui protecoes contra esse caso:
 
 ## Limitações conhecidas do produto
 
+- Na auditoria deste ambiente em 20/11/2026, `npm audit --omit=dev` ainda aponta um alerta alto em Zod 3. O OpenAI SDK 4 declara compatibilidade com Zod 3, enquanto a correção auditada está na linha Zod 4; planeje a migração do SDK/validador e teste-a antes de publicar. Não aplique `npm audit fix --force` sem essa migração.
 - Não integra diretamente com WhatsApp.
 - O usuário precisa baixar ou encaminhar os áudios e subir no app.
 - Não salva histórico em servidor ou banco. Projetos nomeados podem ser salvos manualmente neste navegador, sem arquivos originais.
@@ -805,12 +803,12 @@ O projeto tambem inclui protecoes contra esse caso:
 - Áudios com ruído, sobreposição de vozes ou fala distante podem gerar trechos incertos.
 - A análise de áudio usa a transcrição textual; não faz diarização nem entendimento acústico de emoções neste fluxo.
 - O modelo de timestamps `whisper-1` está em uso apenas por compatibilidade do YouTube/Cortes e tem encerramento anunciado para 26/02/2027; planejar migração antes dessa data.
-- A análise YouTube descreve até oito quadros visuais amostrados quando o vídeo pode ser obtido; não é análise quadro a quadro. A detecção de cortes usa FFmpeg, timestamps e curadoria textual OpenAI.
-- A aquisição do YouTube depende das políticas e formatos disponíveis no momento; o upload de MP4 é o caminho de contingência.
+- A análise visual de cortes amostra até quatro quadros por candidato; não é rastreamento quadro a quadro. Se não encontrar um alvo confiável ou a análise visual falhar, o centro do vídeo é usado e um aviso é exibido.
+- `Cortes Inteligentes` exige o upload do vídeo original autorizado; uma URL pública do YouTube não é fonte de download nesse módulo.
 - A aquisição sem login de links do Instagram também é best-effort; o acesso público no navegador não garante que a plataforma libere a faixa de áudio para extração automatizada.
 - A transcrição temporal é gerada pela IA e deve ser revisada antes de publicar um corte.
-- O reenquadramento `face`, `speaker`, `subject` e `screen` mantém o pipeline compatível, mas a renderização atual usa o enquadramento central como fallback seguro; rastreamento visual dedicado pode ser conectado depois.
-- A legenda dinâmica usa o mesmo SRT-base da legenda simples nesta etapa.
+- O reenquadramento `face`, `speaker`, `subject` e `screen` usa coordenadas inferidas por amostragem visual e interpola a posição entre quadros amostrados; movimento rápido ainda pode sair do quadro e o centro é o fallback.
+- A diarização de falantes não está implementada nos cortes; os participantes podem permanecer não identificados.
 - O produto não mantém histórico ou autenticação; jobs e saídas são temporários e expiram conforme configuração.
 
 ## Próximos recursos possíveis
@@ -957,6 +955,11 @@ Como biografias podem levar várias sessões, `Projetos neste computador` permit
 - [ ] Analisar vídeo e acompanhar cada etapa do job
 - [ ] Buscar um momento por descrição semântica
 - [ ] Revisar início/fim de um candidato
+- [ ] Pré-visualizar o trecho e confirmar que para no fim do intervalo
+- [ ] Editar o título e confirmar o título na saída gerada
+- [ ] Gerar reenquadramento assistido e conferir avisos/fallbacks
+- [ ] Interromper uma renderização e retomá-la sem duplicar cortes concluídos
+- [ ] Confirmar que link do YouTube isolado retorna `422` sem criar job no módulo de cortes
 - [ ] Gerar MP4 vertical com legenda e baixar SRT
 - [ ] Assistir o MP4 gerado diretamente no painel
 - [ ] Cancelar um processamento em andamento

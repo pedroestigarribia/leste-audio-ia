@@ -5,13 +5,37 @@ import path from "node:path";
 
 import { getServerEnv } from "@/lib/env";
 import { createJobId, ensureJobDir, fileExists, getCutsRoot, getJobDir, safeDeletePath } from "@/lib/video/paths";
-import type { ClipPreferences, VideoJobState, VideoSourceType } from "@/types/video";
+import type { ClipPreferences, RenderOptions, VideoJobState, VideoSourceType } from "@/types/video";
 
 type StoredJob = VideoJobState & {
   sourcePath?: string;
   audioPath?: string;
   transcriptPath?: string;
+  pendingAction?: "analyze" | "render";
+  pendingRender?: {
+    clips: Array<{ candidateId: string; startTime?: number; endTime?: number; title?: string }>;
+    options: RenderOptions;
+  };
 };
+
+const ACTIVE_STAGES = new Set<StoredJob["stage"]>([
+  "created", "validating", "acquiring", "probing", "extracting_audio", "transcribing",
+  "analyzing_scenes", "analyzing_semantics", "generating_candidates", "ranking_candidates", "rendering",
+]);
+
+export const YOUTUBE_CUT_UPLOAD_REQUIRED = "Para gerar cortes, envie o arquivo MP4 original ou autorizado. O link do YouTube fica apenas como referência.";
+
+export function requiresYoutubeUpload(job: Pick<StoredJob, "sourceType" | "sourcePath">) {
+  return job.sourceType === "youtube" && !job.sourcePath;
+}
+
+export function getStaleJobAction(
+  stage: StoredJob["stage"],
+  pendingAction: StoredJob["pendingAction"],
+  hasSource: boolean,
+) {
+  return pendingAction ?? (stage !== "rendering" && hasSource ? "analyze" : undefined);
+}
 
 type JobRuntime = {
   running: Map<string, Promise<void>>;
@@ -51,12 +75,33 @@ export async function getStoredJob(jobId: string): Promise<StoredJob | null> {
 
 export function toPublicJob(job: StoredJob) {
   const outputs = job.outputs.map((output) => {
-    const { filePath: _filePath, srtPath: _srtPath, ...publicOutput } = output;
+    const { filePath: _filePath, srtPath: _srtPath, renderKey: _renderKey, ...publicOutput } = output;
     return publicOutput;
   });
 
-  const { sourcePath: _sourcePath, audioPath: _audioPath, transcriptPath: _transcriptPath, ...publicJob } = job;
-  return { ...publicJob, outputs };
+  const {
+    sourcePath: _sourcePath,
+    audioPath: _audioPath,
+    transcriptPath: _transcriptPath,
+    pendingAction: _pendingAction,
+    pendingRender: _pendingRender,
+    ...publicJob
+  } = job;
+  if (requiresYoutubeUpload(job)) {
+    return {
+      ...publicJob,
+      outputs,
+      stage: job.stage === "cancelled" ? job.stage : "failed" as const,
+      message: job.stage === "cancelled" ? job.message : "Arquivo original necessário.",
+      error: job.stage === "cancelled" ? undefined : YOUTUBE_CUT_UPLOAD_REQUIRED,
+      recoverableAction: undefined,
+    };
+  }
+  return {
+    ...publicJob,
+    outputs,
+    recoverableAction: job.stage === "failed" ? job.pendingAction : undefined,
+  };
 }
 
 export async function createVideoJob(params: {
@@ -121,7 +166,7 @@ export async function countActiveVideoJobs() {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const job = await getStoredJob(entry.name);
-      if (job && ["validating", "acquiring", "probing", "extracting_audio", "transcribing", "analyzing_scenes", "analyzing_semantics", "generating_candidates", "ranking_candidates", "rendering"].includes(job.stage)) {
+      if (job && ACTIVE_STAGES.has(job.stage) && !requiresYoutubeUpload(job)) {
         diskCount += 1;
       }
     }
@@ -135,12 +180,24 @@ export async function countActiveVideoJobs() {
 export async function cleanupExpiredVideoJobs() {
   try {
     const entries = await fs.readdir(getCutsRoot(), { withFileTypes: true });
-    const expiration = getServerEnv().cutOutputTtlMinutes * 60_000;
+    const env = getServerEnv();
+    const expiration = env.cutOutputTtlMinutes * 60_000;
+    const runtime = getRuntime();
     await Promise.all(entries.filter((entry) => entry.isDirectory()).map(async (entry) => {
       const job = await getStoredJob(entry.name);
-      if (!job || !["ready_for_review", "completed", "failed", "cancelled"].includes(job.stage)) return;
-      if (Date.now() - new Date(job.updatedAt).getTime() > expiration) {
+      if (!job || runtime.running.has(job.jobId)) return;
+      const idleMs = Date.now() - new Date(job.updatedAt).getTime();
+      if (idleMs > expiration) {
         await safeDeletePath(getJobDir(entry.name));
+        return;
+      }
+      if (ACTIVE_STAGES.has(job.stage) && !requiresYoutubeUpload(job) && idleMs > env.processTimeoutMs) {
+        await updateVideoJob(job.jobId, {
+          stage: "failed",
+          message: "O processamento foi interrompido e pode ser retomado.",
+          error: "A execução anterior parou antes de concluir. Retome para continuar; resultados de cortes já concluídos serão preservados.",
+          pendingAction: getStaleJobAction(job.stage, job.pendingAction, Boolean(job.sourcePath)),
+        });
       }
     }));
   } catch {
@@ -164,6 +221,8 @@ export async function enqueueVideoJob(jobId: string, task: (signal: AbortSignal)
           progress: 0,
           message: "Processamento cancelado.",
           error: undefined,
+          pendingAction: undefined,
+          pendingRender: undefined,
         }).catch(() => undefined);
         return;
       }

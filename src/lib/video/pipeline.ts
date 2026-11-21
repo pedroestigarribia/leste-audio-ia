@@ -9,8 +9,7 @@ import { getJobDir, fileExists } from "@/lib/video/paths";
 import { extractAudioForVideo, probeVideo } from "@/lib/video/probe";
 import { detectSceneChanges } from "@/lib/video/scenes";
 import { withVideoLimit } from "@/lib/video/limits";
-import { acquireYoutubeVideo } from "@/lib/video/youtube-source";
-import { getStoredJob, isJobCancelled, setJobProgress, updateVideoJob } from "@/lib/video/job-store";
+import { getStoredJob, isJobCancelled, setJobProgress, updateVideoJob, YOUTUBE_CUT_UPLOAD_REQUIRED } from "@/lib/video/job-store";
 import { transcribeVideoStructured } from "@/lib/video/transcript";
 
 async function checkCancelled(jobId: string, signal: AbortSignal) {
@@ -24,23 +23,15 @@ export async function processVideoJob(jobId: string, signal: AbortSignal) {
   if (!initialJob) throw new Error("Job de vídeo não encontrado.");
 
   await fs.rm(path.join(getJobDir(jobId), "cancel.flag"), { force: true }).catch(() => undefined);
-  let sourcePath = initialJob.sourcePath;
+  const sourcePath = initialJob.sourcePath;
   let audioPath: string | undefined;
 
   try {
     await checkCancelled(jobId, signal);
     await setJobProgress(jobId, "validating", 3, "Validando a origem do vídeo...");
 
-    if (initialJob.sourceType === "youtube") {
-      if (!initialJob.sourceUrl) throw new Error("O link do YouTube não foi informado.");
-      await setJobProgress(jobId, "acquiring", 8, "Obtendo o vídeo do YouTube...");
-      const acquired = await acquireYoutubeVideo(jobId, initialJob.sourceUrl);
-      sourcePath = acquired.sourcePath;
-      await updateVideoJob(jobId, { sourcePath, metadata: acquired.metadata });
-    }
-
     if (!sourcePath || !(await fileExists(sourcePath))) {
-      throw new Error("O arquivo de vídeo não está disponível para processamento.");
+      throw new Error(initialJob.sourceType === "youtube" ? YOUTUBE_CUT_UPLOAD_REQUIRED : "O arquivo de vídeo não está disponível para processamento.");
     }
 
     await checkCancelled(jobId, signal);
@@ -82,6 +73,7 @@ export async function processVideoJob(jobId: string, signal: AbortSignal) {
         participants: transcript.participants,
       },
       semanticSegments,
+      sceneMarkers,
     });
 
     await checkCancelled(jobId, signal);
@@ -105,6 +97,8 @@ export async function processVideoJob(jobId: string, signal: AbortSignal) {
       progress: 100,
       message: `${candidates.length} corte(s) sugerido(s) para revisão.`,
       error: undefined,
+      pendingAction: undefined,
+      pendingRender: undefined,
     });
   } finally {
     if (audioPath) await fs.rm(audioPath, { force: true }).catch(() => undefined);
