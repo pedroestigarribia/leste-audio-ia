@@ -24,12 +24,6 @@ const ACTIVE_STAGES = new Set<StoredJob["stage"]>([
   "analyzing_scenes", "analyzing_semantics", "generating_candidates", "ranking_candidates", "rendering",
 ]);
 
-export const YOUTUBE_CUT_UPLOAD_REQUIRED = "Para gerar cortes, envie o arquivo MP4 original ou autorizado. O link do YouTube fica apenas como referência.";
-
-export function requiresYoutubeUpload(job: Pick<StoredJob, "sourceType" | "sourcePath">) {
-  return job.sourceType === "youtube" && !job.sourcePath;
-}
-
 export function getStaleJobAction(
   stage: StoredJob["stage"],
   pendingAction: StoredJob["pendingAction"],
@@ -95,19 +89,12 @@ export function toPublicJob(job: StoredJob) {
     pendingRender: _pendingRender,
     ...publicJob
   } = job;
-  if (requiresYoutubeUpload(job)) {
-    return {
-      ...publicJob,
-      outputs,
-      stage: job.stage === "cancelled" ? job.stage : "failed" as const,
-      message: job.stage === "cancelled" ? job.message : "Arquivo original necessário.",
-      error: job.stage === "cancelled" ? undefined : YOUTUBE_CUT_UPLOAD_REQUIRED,
-      recoverableAction: undefined,
-    };
-  }
   return {
     ...publicJob,
     outputs,
+    error: job.sourceType === "youtube" && /Command failed:|\/home\/|node_modules\//.test(job.error ?? "")
+      ? "Não foi possível obter o vídeo do YouTube. Tente novamente ou envie o arquivo MP4."
+      : job.error,
     recoverableAction: job.stage === "failed" ? job.pendingAction : undefined,
   };
 }
@@ -174,7 +161,7 @@ export async function countActiveVideoJobs() {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const job = await getStoredJob(entry.name);
-      if (job && ACTIVE_STAGES.has(job.stage) && !requiresYoutubeUpload(job)) {
+      if (job && ACTIVE_STAGES.has(job.stage)) {
         diskCount += 1;
       }
     }
@@ -199,12 +186,12 @@ export async function cleanupExpiredVideoJobs() {
         await safeDeletePath(getJobDir(entry.name));
         return;
       }
-      if (ACTIVE_STAGES.has(job.stage) && !requiresYoutubeUpload(job) && idleMs > env.processTimeoutMs) {
+      if (ACTIVE_STAGES.has(job.stage) && idleMs > env.processTimeoutMs) {
         await updateVideoJob(job.jobId, {
           stage: "failed",
           message: "O processamento foi interrompido e pode ser retomado.",
           error: "A execução anterior parou antes de concluir. Retome para continuar; resultados de cortes já concluídos serão preservados.",
-          pendingAction: getStaleJobAction(job.stage, job.pendingAction, Boolean(job.sourcePath)),
+          pendingAction: getStaleJobAction(job.stage, job.pendingAction, Boolean(job.sourcePath || job.sourceUrl)),
         });
       }
     }));

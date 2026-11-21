@@ -96,7 +96,7 @@ src/
 
 Requisito:
 
-- Node.js `>= 20`
+- Node.js `>= 22` (necessário para os desafios JavaScript do YouTube no `yt-dlp`)
 
 Passos:
 
@@ -238,14 +238,14 @@ O ZIP é salvo em `Downloads` com data e hora no nome. Ele exclui `node_modules`
 
 1. Copie `leste-audio-ia-distribuicao.zip` para o outro computador.
 2. Extraia o ZIP para uma pasta sem bloquear a execução, por exemplo `C:\Apps\leste-audio-ia`.
-3. Confirme que o Node.js `20` ou superior está instalado.
+3. Confirme que o Node.js `22` ou superior está instalado.
 4. Dê dois cliques em `instalar-leste-audio-ia.cmd`.
 5. O instalador cria `.env.local`, instala as dependências, cria o atalho `Leste Audio IA - Iniciar.lnk` na Área de Trabalho e inicia o app.
 6. Preencha as chaves no `.env.local` e use o atalho novamente para reiniciar o servidor.
 
 Também é possível executar `iniciar-leste-audio-ia.cmd` diretamente. Ele instala dependências se necessário, verifica a página e abre o navegador em uma porta livre entre `3000` e `3010`.
 
-`npm install` instala `ffmpeg-static` e `@derhuerst/ffprobe-static`; o app também aceita os binários do sistema via `FFMPEG_BIN` e `FFPROBE_BIN`. A transcrição por link do Instagram/YouTube usa o binário `yt-dlp` baixado por `youtube-dl-exec` e executado pelo `child_process` do Node.js. O instalador normalmente verifica Python; em Linux sem Python, configure `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux` para baixar o executável autossuficiente oficial. Não use `YOUTUBE_DL_FILENAME=yt-dlp_linux` no Windows. `YTDLP_BIN` pode apontar para um binário compatível instalado no sistema. `Cortes Inteligentes` requer upload do vídeo original autorizado; a URL do YouTube é apenas referência e não é baixada nesse fluxo.
+`npm install` instala `ffmpeg-static` e `@derhuerst/ffprobe-static`; o app também aceita os binários do sistema via `FFMPEG_BIN` e `FFPROBE_BIN`. Os links do Instagram/YouTube usam o binário `yt-dlp` baixado por `youtube-dl-exec` e executado pelo `child_process` do Node.js. Em Linux sem Python, configure `YOUTUBE_DL_SKIP_PYTHON_CHECK=1` e `YOUTUBE_DL_FILENAME=yt-dlp_linux` antes do build. Não use `YOUTUBE_DL_FILENAME=yt-dlp_linux` no Windows. `YTDLP_BIN` pode apontar para um binário compatível instalado no sistema. Em `Cortes Inteligentes`, o link público do YouTube inicia a aquisição temporária do vídeo no servidor; o upload continua disponível se o YouTube negar o acesso.
 
 ### Diretórios de build separados
 
@@ -299,7 +299,7 @@ Domínio:
 16. PDFs com texto pesquisável e arquivos DOCX são divididos em capítulos para audiobook. A geração ocorre em fila, um capítulo por vez, para evitar uma requisição longa e permitir retomar apenas o capítulo que falhar.
 17. Em cada áudio transcrito, a análise automática identifica assunto, contexto, intenção, temas, insights, tarefas, decisões, dados-chave, riscos, oportunidades e estrutura narrativa a partir do arquivo original.
 18. Depois da análise, também é possível gerar artigo, copy, post, roteiro, storytelling, resposta para WhatsApp, plano de negócios ou estratégia de marketing. Todo resultado pode ser copiado, baixado em DOCX, ouvido com a voz da Milena e baixado em MP3.
-19. A área `Cortes Inteligentes` aceita MP4/MOV/WEBM/M4V, processa o vídeo em job assíncrono, mostra cada etapa, permite cancelar, encontra trechos por descoberta ou busca semântica e oferece revisão manual do título e dos intervalos. Links do YouTube são apenas referências; o arquivo original autorizado precisa ser enviado.
+19. A área `Cortes Inteligentes` aceita link público do YouTube ou MP4/MOV/WEBM/M4V, processa em job assíncrono, mostra cada etapa, permite cancelar, encontra trechos por descoberta ou busca semântica e oferece revisão manual do título e dos intervalos.
 20. Cada candidato de corte recebe título, tema, trecho, score heurístico de retenção, critérios, legenda, copy, hashtags, participantes, confiança e alertas para revisão.
 21. O usuário escolhe cortes, formato 9:16/1:1/16:9, legenda simples/dinâmica ou sem legenda e reenquadramento central ou assistido por análise de quadros. Há prévia local do trecho e retomada de renderização parcial sem duplicar saídas concluídas.
 
@@ -559,7 +559,7 @@ O módulo de vídeo usa jobs temporários em `tmp/cuts/<jobId>`. O estado públi
 
 #### `POST /api/cuts/jobs`
 
-Envie `multipart/form-data` com o campo `file` e, opcionalmente, `preferences` como JSON e `sourceUrl` para associar um link do YouTube apenas como referência. Um pedido JSON com `sourceType: "youtube"` valida o endereço e responde `422`; nenhum job ou download é iniciado.
+Envie `multipart/form-data` com o campo `file` e, opcionalmente, `preferences` como JSON e `sourceUrl` para associar uma referência. Para processar diretamente um link público, envie JSON com `sourceType: "youtube"`, `url` e `preferences`. Ambos retornam `201` com `jobId`; o download só começa após `POST /api/cuts/jobs/:jobId/analyze`.
 
 ```text
 file=<arquivo original>
@@ -567,15 +567,21 @@ preferences={"mode":"discover","genre":"Podcast","durationPreset":"30-60","desir
 sourceUrl=https://www.youtube.com/watch?v=...
 ```
 
-O upload retorna `201` com `jobId` e estado inicial. Formatos aceitos: `.mp4`, `.mov`, `.webm` e `.m4v`. O limite padrão é `MAX_VIDEO_UPLOAD_MB=125`; a duração padrão máxima é `MAX_VIDEO_DURATION_SEC=7200`. O link não fornece mídia para processamento.
+```json
+{"sourceType":"youtube","url":"https://www.youtube.com/watch?v=...","preferences":{"mode":"discover","genre":"Podcast","durationPreset":"30-60","desiredCount":8}}
+```
 
-Se uma versão anterior mostrar `Status code: 429` ao tentar baixar pelo link, use **Enviar vídeo** e selecione o original autorizado. Para vídeos que você publicou, o [YouTube Studio permite baixar o MP4](https://support.google.com/youtube/answer/56100?hl=pt-BR). Jobs antigos que só têm o link não são retomados nem ocupam vagas da fila; crie um novo job com o arquivo. Se localhost já mostrar **YouTube como referência** mas o domínio publicado ainda oferecer cortes só por link, a hospedagem ainda precisa receber a versão corrigida.
+Formatos de upload: `.mp4`, `.mov`, `.webm` e `.m4v`. O vídeo obtido por URL também respeita `MAX_VIDEO_UPLOAD_MB=125` e `MAX_VIDEO_DURATION_SEC=7200`; só links públicos do YouTube são aceitos. O `yt-dlp` não é uma API oficial nem garante acesso: se o YouTube responder 429, exigir login ou bloquear o IP da hospedagem, não há como prometer o MP4 por código apenas. Nesse caso, envie o arquivo autorizado; para vídeos publicados por você, veja [como baixar pelo YouTube Studio](https://support.google.com/youtube/answer/56100?hl=pt-BR). Não configure cookies de contas de terceiros nem proxies não autorizados.
+
+O extrator usa o cliente de vídeo incorporado e omite a página inicial para reduzir requisições, como permite a [documentação do yt-dlp](https://github.com/yt-dlp/yt-dlp/blob/master/README.md#youtube). Isso pode limitar vídeos que não permitem incorporação. A [FAQ do yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#http-error-429-too-many-requests-or-402-payment-required) explica que 429 pode ser bloqueio do IP; trocar de modelo de IA não resolve a obtenção dos bytes do vídeo.
+
+Teste de ponta a ponta com um vídeo público curto e autorizado: defina `CUT_TEST_ORIGIN=https://lesteaudio.space` e `CUT_TEST_YOUTUBE_URL=https://www.youtube.com/watch?v=...` no terminal e rode `node scripts/test-cuts-live.cjs`. O script cria um job temporário, exige transcrição/sugestão, gera MP4 e SRT, verifica os downloads e apaga o próprio job. Sem URL, ele testa o upload de um vídeo sintético local (Windows).
 
 #### `POST /api/cuts/jobs/:jobId/analyze`
 
 Inicia o processamento em segundo plano e retorna `202`. O frontend consulta `GET /api/cuts/jobs/:jobId` até `ready_for_review`, `completed`, `failed` ou `cancelled`.
 
-Etapas: validar o upload, sondar metadados, extrair áudio mono 16 kHz, transcrever com timestamps por segmento e palavra, detectar cenas, analisar semântica, gerar candidatos e pontuar diversidade/retenção. Os timestamps por palavra usam atualmente `whisper-1`; planeje a migração antes do encerramento anunciado para 26/02/2027.
+Etapas: validar o upload ou adquirir temporariamente o vídeo do link, sondar metadados, extrair áudio mono 16 kHz, transcrever com timestamps por segmento e palavra, detectar cenas, analisar semântica, gerar candidatos e pontuar diversidade/retenção. Arquivos parciais de aquisição são apagados se ela falhar; o original e os cortes expiram com o job. Os timestamps por palavra usam atualmente `whisper-1`; planeje a migração antes do encerramento anunciado para 26/02/2027.
 
 #### `POST /api/cuts/jobs/:jobId/render`
 
@@ -603,11 +609,11 @@ Para retomar uma renderização interrompida, envie `{ "resume": true }`. As sa�
 
 - `ffmpeg-static` cobre o FFmpeg no Node.js; `FFMPEG_BIN` pode apontar para uma instalação do sistema.
 - FFprobe é necessário para duração e streams. Configure `FFPROBE_BIN` quando o executável não estiver no PATH.
-- `yt-dlp` atende apenas aos fluxos separados de importação/transcrição por link; não é necessário em `Cortes Inteligentes`, que processa o vídeo enviado.
+- `yt-dlp` também adquire vídeos públicos do YouTube em `Cortes Inteligentes`. O binário oficial inclui os scripts EJS; Node.js 22+ é necessário como runtime JavaScript para esses desafios. Use vídeos próprios ou autorizados.
 - Se o `yt-dlp` não conseguir obter a mídia, o app retorna erro e pede o upload manual do arquivo; não envia URL para um provedor de IA como fallback.
 - A entrada principal também aceita links diretos de Reels e vídeos do Instagram por `POST /api/transcribe-url`; o extractor do `yt-dlp` é best-effort e alguns Reels públicos podem exigir login, ser limitados ou deixar de funcionar após mudanças da plataforma. O app não usa cookies nem contorna essas restrições.
 - Links privados, vídeos com login, lives indisponíveis e conteúdos protegidos podem ser recusados; nesse caso, envie o arquivo MP4.
-- Use uploads apenas de conteúdo próprio ou para o qual você tenha autorização. `sourceUrl` em `Cortes Inteligentes` é apenas uma referência. Os outros fluxos de importação por link continuam sujeitos à disponibilidade e aos termos da plataforma e não são APIs oficiais de download.
+- Use apenas conteúdo próprio ou autorizado. `sourceUrl` no upload continua sendo uma referência; `sourceType: "youtube"` com URL é uma aquisição temporária de fonte. Todos os fluxos por link dependem da disponibilidade e dos termos da plataforma e não são APIs oficiais de download.
 
 ## Formatos aceitos
 
@@ -714,7 +720,7 @@ Checklist de deploy via GitHub:
 7. Conecte o GitHub e selecione `pedroestigarribia/leste-audio-ia`.
 8. Use a branch `main`.
 9. Configure:
-   - Node: `20` ou superior
+   - Node: `22` ou superior
    - Build command: `npm run build`
    - Start command: `npm run start`
    - Startup file, se o painel pedir: `server.js`
@@ -804,7 +810,7 @@ O projeto tambem inclui protecoes contra esse caso:
 - A análise de áudio usa a transcrição textual; não faz diarização nem entendimento acústico de emoções neste fluxo.
 - O modelo de timestamps `whisper-1` está em uso apenas por compatibilidade do YouTube/Cortes e tem encerramento anunciado para 26/02/2027; planejar migração antes dessa data.
 - A análise visual de cortes amostra até quatro quadros por candidato; não é rastreamento quadro a quadro. Se não encontrar um alvo confiável ou a análise visual falhar, o centro do vídeo é usado e um aviso é exibido.
-- `Cortes Inteligentes` exige o upload do vídeo original autorizado; uma URL pública do YouTube não é fonte de download nesse módulo.
+- A aquisição de vídeo por link do YouTube é best-effort. Respostas 429, bloqueio do IP, login exigido, vídeos privados ou não incorporáveis podem impedir a criação do MP4; o upload do arquivo autorizado é a alternativa.
 - A aquisição sem login de links do Instagram também é best-effort; o acesso público no navegador não garante que a plataforma libere a faixa de áudio para extração automatizada.
 - A transcrição temporal é gerada pela IA e deve ser revisada antes de publicar um corte.
 - O reenquadramento `face`, `speaker`, `subject` e `screen` usa coordenadas inferidas por amostragem visual e interpola a posição entre quadros amostrados; movimento rápido ainda pode sair do quadro e o centro é o fallback.

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { getServerEnv } from "@/lib/env";
-import { cleanupExpiredVideoJobs, countActiveVideoJobs, createVideoJob, deleteVideoJob, toPublicJob, updateVideoJob, YOUTUBE_CUT_UPLOAD_REQUIRED } from "@/lib/video/job-store";
+import { cleanupExpiredVideoJobs, countActiveVideoJobs, createVideoJob, deleteVideoJob, toPublicJob, updateVideoJob } from "@/lib/video/job-store";
 import { normalizeClipPreferences } from "@/lib/video/preferences";
 import { InvalidVideoSourceUrlError, validatePublicVideoUrl } from "@/lib/video/source-url";
 import { saveVideoUploadFromMultipart } from "@/lib/video/upload";
@@ -22,7 +22,7 @@ function errorResponse(message: string, status = 400) {
 function getYoutubeReference(value: string) {
   const source = validatePublicVideoUrl(value);
   if (source.platform !== "youtube") {
-    throw new InvalidVideoSourceUrlError("Use um link do YouTube como referência.");
+    throw new InvalidVideoSourceUrlError("Use um link público do YouTube.");
   }
   return source.url;
 }
@@ -32,8 +32,18 @@ export async function POST(request: Request) {
     const contentType = request.headers.get("content-type") || "";
     if (contentType.includes("application/json")) {
       const body = youtubeBodySchema.parse(await request.json());
-      getYoutubeReference(body.url);
-      return errorResponse(YOUTUBE_CUT_UPLOAD_REQUIRED, 422);
+      const sourceUrl = getYoutubeReference(body.url);
+      await cleanupExpiredVideoJobs();
+      if (await countActiveVideoJobs() >= getServerEnv().maxActiveCutJobs) {
+        return errorResponse("O limite de processamentos simultâneos foi atingido. Aguarde um job terminar.", 429);
+      }
+      const job = await createVideoJob({
+        sourceType: "youtube",
+        sourceName: "Vídeo do YouTube",
+        sourceUrl,
+        preferences: normalizeClipPreferences(body.preferences ?? {}),
+      });
+      return Response.json({ ok: true, jobId: job.jobId, job: toPublicJob(job) }, { status: 201 });
     }
 
     if (!contentType.includes("multipart/form-data")) {

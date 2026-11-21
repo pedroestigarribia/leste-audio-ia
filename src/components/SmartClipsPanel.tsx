@@ -227,7 +227,8 @@ export default function SmartClipsPanel() {
   const previewStopAtRef = useRef<number | null>(null);
 
   const active = Boolean(job && ACTIVE_STAGES.has(job.stage) && job.stage !== "created");
-  const canPreview = Boolean(job && uploadedSource?.jobId === job.jobId && previewUrl);
+  const youtubePreviewId = job?.sourceType === "youtube" ? job.sourceUrl?.match(/[?&]v=([A-Za-z0-9_-]{11})/)?.[1] : undefined;
+  const canPreview = Boolean(job && ((uploadedSource?.jobId === job.jobId && previewUrl) || youtubePreviewId));
   const selectedCandidates = useMemo(() => job?.candidates.filter((candidate) => selectedIds.includes(candidate.id)) ?? [], [job?.candidates, selectedIds]);
 
   useEffect(() => {
@@ -287,21 +288,32 @@ export default function SmartClipsPanel() {
 
   async function startAnalysis() {
     setError("");
-    if (!file) {
-      setError("Selecione o arquivo de vídeo original ou autorizado para gerar os cortes. O link do YouTube é apenas uma referência.");
+    if (sourceMode === "youtube" && !youtubeUrl.trim()) {
+      setError("Cole um link público do YouTube para gerar os cortes.");
+      return;
+    }
+    if (sourceMode === "upload" && !file) {
+      setError("Selecione um vídeo original ou autorizado para gerar os cortes.");
       fileInputRef.current?.focus();
       return;
     }
 
     setLoading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("preferences", JSON.stringify(preferences));
-      if (sourceMode === "youtube" && youtubeUrl.trim()) formData.append("sourceUrl", youtubeUrl.trim());
-      const created = await fetchJson("/api/cuts/jobs", { body: formData, method: "POST" });
+      let body: FormData | string;
+      let headers: HeadersInit | undefined;
+      if (sourceMode === "youtube") {
+        body = JSON.stringify({ sourceType: "youtube", url: youtubeUrl.trim(), preferences });
+        headers = { "Content-Type": "application/json" };
+      } else {
+        const formData = new FormData();
+        formData.append("file", file as File);
+        formData.append("preferences", JSON.stringify(preferences));
+        body = formData;
+      }
+      const created = await fetchJson("/api/cuts/jobs", { body, headers, method: "POST" });
       if (!created.jobId || !created.job) throw new Error("A API não retornou o job criado.");
-      setUploadedSource({ jobId: created.jobId, file });
+      setUploadedSource(sourceMode === "upload" && file ? { jobId: created.jobId, file } : null);
       setPreviewRange(null);
       previewStopAtRef.current = null;
       setJob(created.job);
@@ -351,7 +363,7 @@ export default function SmartClipsPanel() {
 
   function previewCandidate(candidate: ClipCandidate) {
     if (!job || !canPreview) {
-      setError("A prévia está disponível para o arquivo de vídeo enviado nesta sessão.");
+      setError("A prévia deste vídeo não está disponível nesta sessão.");
       return;
     }
     const duration = job.metadata?.durationSec ?? candidate.endTime;
@@ -419,7 +431,7 @@ export default function SmartClipsPanel() {
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-leste-gold px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-slate-950"><Clapperboard className="h-4 w-4" /> Produto de vídeo</div>
           <h2 className="mt-3 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Cortes Inteligentes</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Envie um vídeo autorizado para encontrar, revisar e exportar cortes para redes sociais. Um link do YouTube pode ser anexado apenas como referência; o sistema não baixa o vídeo pelo link.</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Cole o link público de um vídeo do YouTube ou envie um arquivo autorizado. Revise os trechos antes de gerar e baixar os cortes.</p>
         </div>
         <a className="inline-flex items-center gap-2 text-sm font-bold text-leste-blue hover:underline" href="#audio-pdf"><ExternalLink className="h-4 w-4" /> Voltar aos conteúdos</a>
       </div>
@@ -428,20 +440,20 @@ export default function SmartClipsPanel() {
         <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
           <div className="flex flex-wrap gap-2">
             <button className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold ${sourceMode === "upload" ? "bg-leste-blue text-white" : "border border-blue-200 text-leste-blue"}`} onClick={() => setSourceMode("upload")} type="button"><Film className="h-4 w-4" /> Enviar vídeo</button>
-            <button className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold ${sourceMode === "youtube" ? "bg-leste-blue text-white" : "border border-blue-200 text-leste-blue"}`} onClick={() => setSourceMode("youtube")} type="button"><ExternalLink className="h-4 w-4" /> YouTube como referência</button>
+            <button className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold ${sourceMode === "youtube" ? "bg-leste-blue text-white" : "border border-blue-200 text-leste-blue"}`} onClick={() => setSourceMode("youtube")} type="button"><ExternalLink className="h-4 w-4" /> Link do YouTube</button>
           </div>
 
-          <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/50 p-5 text-center focus-within:ring-2 focus-within:ring-leste-blue hover:border-leste-blue" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setFile(event.dataTransfer.files[0] ?? null); }}>
+          {sourceMode === "upload" ? <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/50 p-5 text-center focus-within:ring-2 focus-within:ring-leste-blue hover:border-leste-blue" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setFile(event.dataTransfer.files[0] ?? null); }}>
             <Film className="h-8 w-8 text-leste-blue" />
             <span className="mt-2 max-w-full break-words [overflow-wrap:anywhere] text-sm font-black text-slate-950">{file ? file.name : "Escolha ou arraste o arquivo original"}</span>
             <span className="mt-1 text-xs text-slate-600">MP4 recomendado; também aceita MOV, WEBM e M4V. Limite configurável do produto.</span>
             <input accept=".mp4,.mov,.webm,.m4v,video/mp4,video/quicktime,video/webm,video/x-m4v" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] ?? null)} ref={fileInputRef} type="file" />
-          </label>
+          </label> : null}
           {sourceMode === "youtube" ? <div className="space-y-2">
-            <label className="block text-sm font-bold text-slate-700">Link do YouTube para referência (opcional)
+            <label className="block text-sm font-bold text-slate-700">Link público do YouTube
               <input className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 px-4 text-sm font-normal text-slate-950 outline-none focus:border-leste-blue focus:ring-2 focus:ring-blue-100" onChange={(event) => setYoutubeUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=..." type="url" value={youtubeUrl} />
             </label>
-            <p className="text-xs leading-5 text-slate-600">Envie o arquivo original acima. Se o vídeo for seu, veja <a className="font-bold text-leste-blue underline" href="https://support.google.com/youtube/answer/56100?hl=pt-BR" rel="noreferrer" target="_blank">como baixar o MP4 pelo YouTube Studio</a>.</p>
+            <p className="text-xs leading-5 text-slate-600">Use apenas vídeos seus ou autorizados. Alguns vídeos podem exigir login ou ser bloqueados pelo YouTube no servidor; nesses casos, envie o MP4.</p>
           </div> : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -471,7 +483,7 @@ export default function SmartClipsPanel() {
 
         <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white sm:p-5">
           <div><p className="text-xs font-black uppercase tracking-[0.15em] text-leste-gold">Saída editorial</p><h3 className="mt-2 text-xl font-black">Como o corte será preparado</h3></div>
-          <ul className="space-y-3 text-sm leading-6 text-slate-300"><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Transcrição temporal e temas extraídos do vídeo enviado.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Ganchos, clareza, valor prático, conclusão e avisos explicados.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Revise o trecho, o título e os pontos de início e fim.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> MP4 e SRT; a tela informa se a legenda não puder ser incorporada.</li></ul>
+          <ul className="space-y-3 text-sm leading-6 text-slate-300"><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Transcrição temporal e temas extraídos do vídeo.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Ganchos, clareza, valor prático, conclusão e avisos explicados.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> Revise o trecho, o título e os pontos de início e fim.</li><li className="flex gap-2"><Check className="mt-1 h-4 w-4 shrink-0 text-leste-gold" /> MP4 e SRT; a tela informa se a legenda não puder ser incorporada.</li></ul>
           <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs leading-5 text-slate-400">O arquivo original e as saídas são temporários no servidor. As saídas expiram conforme <code className="text-slate-200">CUT_OUTPUT_TTL_MINUTES</code>.</div>
         </div>
       </div>
@@ -484,7 +496,7 @@ export default function SmartClipsPanel() {
         {job.error ? <ErrorBox message={job.error} /> : null}
         {job.stage === "failed" && job.recoverableAction ? <ActionButton disabled={loading} loading={loading} onClick={() => { void resumeJob(); }} type="button" variant="secondary"><WandSparkles className="h-4 w-4" /> Retomar {job.recoverableAction === "render" ? "cortes pendentes" : "análise"}</ActionButton> : null}
 
-        {previewRange && canPreview ? <div className="space-y-2 rounded-2xl border border-blue-100 bg-slate-950 p-3"><div className="flex items-center justify-between gap-3 text-sm font-bold text-white"><span>Prévia do trecho {formatSeconds(previewRange.start)}–{formatSeconds(previewRange.end)}</span><button className="rounded-lg px-3 py-1 text-xs text-slate-300 hover:bg-white/10" onClick={() => { previewVideoRef.current?.pause(); previewStopAtRef.current = null; setPreviewRange(null); }} type="button">Fechar prévia</button></div><video className="max-h-[60vh] w-full rounded-xl bg-black" controls playsInline preload="metadata" ref={previewVideoRef} src={previewUrl} onTimeUpdate={(event) => { const player = event.currentTarget; if (previewStopAtRef.current !== null && player.currentTime >= previewStopAtRef.current) { player.pause(); previewStopAtRef.current = null; } }} /></div> : null}
+        {previewRange && canPreview ? <div className="space-y-2 rounded-2xl border border-blue-100 bg-slate-950 p-3"><div className="flex items-center justify-between gap-3 text-sm font-bold text-white"><span>Prévia do trecho {formatSeconds(previewRange.start)}–{formatSeconds(previewRange.end)}</span><button className="rounded-lg px-3 py-1 text-xs text-slate-300 hover:bg-white/10" onClick={() => { previewVideoRef.current?.pause(); previewStopAtRef.current = null; setPreviewRange(null); }} type="button">Fechar prévia</button></div>{youtubePreviewId ? <iframe allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen className="aspect-video w-full rounded-xl bg-black" key={`${previewRange.start}-${previewRange.end}`} src={`https://www.youtube-nocookie.com/embed/${youtubePreviewId}?start=${Math.floor(previewRange.start)}&end=${Math.ceil(previewRange.end)}`} title="Prévia do corte no YouTube" /> : <video className="max-h-[60vh] w-full rounded-xl bg-black" controls playsInline preload="metadata" ref={previewVideoRef} src={previewUrl} onTimeUpdate={(event) => { const player = event.currentTarget; if (previewStopAtRef.current !== null && player.currentTime >= previewStopAtRef.current) { player.pause(); previewStopAtRef.current = null; } }} />}</div> : null}
 
         {job.candidates.length ? <div className="space-y-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="text-lg font-black text-slate-950">Candidatos encontrados</h3><p className="text-sm text-slate-600">{selectedCandidates.length} selecionado(s) para renderização.</p></div><ActionButton disabled={!selectedCandidates.length || active} loading={loading} onClick={() => { void renderSelected(); }} type="button" variant="secondary"><WandSparkles className="h-4 w-4" /> Gerar cortes selecionados</ActionButton></div><div className="grid gap-4 xl:grid-cols-2">{job.candidates.map((candidate) => <CandidateCard candidate={candidate} key={candidate.id} onPreview={() => previewCandidate(candidate)} onTitleChange={(value) => setTitles((current) => ({ ...current, [candidate.id]: value }))} title={titles[candidate.id] ?? candidate.title} onRangeChange={(key, value) => setRanges((current) => ({ ...current, [candidate.id]: { ...(current[candidate.id] ?? { startTime: String(candidate.startTime), endTime: String(candidate.endTime) }), [key]: value } }))} onToggle={() => selectCandidate(candidate.id)} range={ranges[candidate.id] ?? { startTime: String(candidate.startTime.toFixed(1)), endTime: String(candidate.endTime.toFixed(1)) }} selected={selectedIds.includes(candidate.id)} />)}</div></div> : null}
 

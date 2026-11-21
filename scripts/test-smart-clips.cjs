@@ -96,7 +96,7 @@ async function main() {
     assert.equal(clamped[0].end, 605);
     assert.equal(clamped[0].words[0].end, 605);
 
-    const env = { getServerEnv: () => ({ maxActiveCutJobs: 1, maxVideoUploadMb: 125, cutOutputTtlMinutes: 60, processTimeoutMs: 15_000 }) };
+    const env = { getServerEnv: () => ({ maxActiveCutJobs: 1, maxVideoUploadMb: 125, maxVideoDurationSec: 120, cutOutputTtlMinutes: 60, processTimeoutMs: 15_000 }) };
     const jobsDir = path.join(tempDir, "jobs");
     const getJobDir = (jobId) => path.join(jobsDir, jobId);
     let lastJobNumber = 0;
@@ -176,17 +176,50 @@ async function main() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sourceType: "youtube", url: youtubeUrl }),
     }));
-    assert.equal(youtubeResponse.status, 422, "A link-only request must explain the missing file even when the queue is full.");
-    assert.match((await youtubeResponse.json()).error, /MP4/);
-    assert.equal(lastJobNumber, 2, "A YouTube reference must never start a download-only job.");
+    assert.equal(youtubeResponse.status, 429, JSON.stringify(await youtubeResponse.clone().json()));
+    assert.equal(lastJobNumber, 2);
     await jobStore.updateVideoJob(active.jobId, { stage: "cancelled" });
-    assert.equal(await jobStore.countActiveVideoJobs(), 0, "A stranded link-only job must not block uploads.");
+    await jobStore.updateVideoJob(legacy.jobId, { stage: "failed" });
+    const acceptedResponse = await cutsRoute.POST(new Request("http://localhost/api/cuts/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceType: "youtube", url: youtubeUrl }),
+    }));
+    assert.equal(acceptedResponse.status, 201);
+    const accepted = (await acceptedResponse.json()).job;
+    assert.equal(accepted.sourceType, "youtube");
+    assert.equal(accepted.sourceUrl, youtubeUrl);
+    assert.equal("sourcePath" in accepted, false);
+    await jobStore.updateVideoJob(accepted.jobId, { stage: "cancelled" });
+    const downloadCalls = [];
+    let blockDownload = false;
+    const youtubeSource = loadTypeScript("src/lib/video/youtube-source.ts", {
+      "@/lib/env": env,
+      "@/lib/video/paths": paths,
+      "@/lib/video/yt-dlp-binary": { runYtDlp: async (args) => {
+        downloadCalls.push(args);
+        if (args.includes("--dump-single-json")) return { stdout: JSON.stringify({ title: "Vídeo de teste", duration: 20, availability: "public" }) };
+        await fs.writeFile(path.join(getJobDir(accepted.jobId), "source.mp4"), "synthetic video");
+        if (blockDownload) throw Object.assign(new Error("/home/private/source.mp4"), { stderr: "HTTP Error 429: Too Many Requests" });
+        return { stdout: "" };
+      } },
+    });
+    const acquired = await youtubeSource.acquireYoutubeVideo(accepted.jobId, youtubeUrl, new AbortController().signal);
+    assert.equal(acquired.title, "Vídeo de teste");
+    assert.equal(await paths.fileExists(acquired.sourcePath), true);
+    assert.ok(downloadCalls.every((args) => args.includes("--js-runtimes") && args.includes("--no-playlist") && args.includes("youtube:player_client=web_embedded;player_skip=webpage")));
+    await fs.rm(acquired.sourcePath);
+    blockDownload = true;
+    await assert.rejects(youtubeSource.acquireYoutubeVideo(accepted.jobId, youtubeUrl, new AbortController().signal), (error) => {
+      assert.match(error.message, /429/);
+      assert.doesNotMatch(error.message, /\/home\/private|source\.mp4/);
+      return true;
+    });
+    assert.equal(await paths.fileExists(path.join(getJobDir(accepted.jobId), "source.mp4")), false);
 
     const legacyPublic = jobStore.toPublicJob(await jobStore.getStoredJob(legacy.jobId));
     assert.equal(legacyPublic.stage, "failed");
-    assert.equal(legacyPublic.recoverableAction, undefined);
-    assert.match(legacyPublic.error, /MP4/);
-    assert.doesNotMatch(legacyPublic.error, /Command failed|\/home\/|node_modules/);
+    assert.equal(legacyPublic.recoverableAction, "analyze");
     let legacyQueued = false;
     const analyzeRoute = loadTypeScript("src/app/api/cuts/jobs/[jobId]/analyze/route.ts", {
       "@/lib/video/job-store": { ...jobStore, enqueueVideoJob: () => { legacyQueued = true; } },
@@ -197,8 +230,9 @@ async function main() {
     const retryResponse = await analyzeRoute.POST(new Request("http://localhost/api/cuts/jobs/legacy/analyze", {
       method: "POST",
     }), { params: Promise.resolve({ jobId: legacy.jobId }) });
-    assert.equal(retryResponse.status, 422);
-    assert.equal(legacyQueued, false);
+    assert.equal(retryResponse.status, 202);
+    assert.equal(legacyQueued, true);
+    await jobStore.updateVideoJob(legacy.jobId, { stage: "cancelled" });
     assert.equal(jobStore.getStaleJobAction("rendering", "render", true), "render");
     assert.equal(jobStore.getStaleJobAction("transcribing", undefined, true), "analyze");
     assert.equal(jobStore.getStaleJobAction("rendering", undefined, true), undefined);
@@ -351,7 +385,7 @@ async function main() {
     assert.equal(videoStream.width, 1080);
     assert.equal(videoStream.height, 1920);
 
-    process.stdout.write("Cortes inteligentes: link sem arquivo, job legado, upload de MP4 com referência, legendas, retomada e renderização verificados.\n");
+    process.stdout.write("Cortes inteligentes: link, download temporário, 429, upload, legendas, retomada e renderização verificados.\n");
   } finally {
     const resolved = path.resolve(tempDir);
     assert.ok(resolved.startsWith(`${tempRoot}${path.sep}`), "Refusing to remove a path outside tmp/.");

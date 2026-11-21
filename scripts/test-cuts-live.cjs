@@ -36,9 +36,18 @@ async function main() {
   const directory = await fs.mkdtemp(path.join(root, "cuts-live-test-"));
   let jobId;
   try {
-    const wav = path.join(directory, "narracao.wav");
-    const video = path.join(directory, "teste.mp4");
-    const speech = [
+    const preferences = { mode: "discover", genre: "Educação", durationPreset: "custom", minDurationSec: 5, maxDurationSec: 20, desiredCount: 1 };
+    let created;
+    if (process.env.CUT_TEST_YOUTUBE_URL) {
+      created = await json("/api/cuts/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceType: "youtube", url: process.env.CUT_TEST_YOUTUBE_URL, preferences }),
+      });
+    } else {
+      const wav = path.join(directory, "narracao.wav");
+      const video = path.join(directory, "teste.mp4");
+      const speech = [
       "$voice=New-Object -ComObject SAPI.SpVoice",
       "$selected=$voice.GetVoices() | Where-Object { $_.GetDescription() -match 'Portuguese' } | Select-Object -First 1",
       "if ($selected) { $voice.Voice=$selected }",
@@ -47,21 +56,20 @@ async function main() {
       "$voice.AudioOutputStream=$stream",
       "[void]$voice.Speak('Hoje falaremos sobre como planejar um projeto. Primeiro, definimos o objetivo e organizamos as ideias. Depois, revisamos as decisões e apresentamos os próximos passos.')",
       "$stream.Close()",
-    ].join("; ");
-    await execFileAsync("powershell.exe", ["-NoProfile", "-Command", speech], { env: { ...process.env, CUT_TEST_AUDIO: wav } });
-    await execFileAsync(require("ffmpeg-static"), [
+      ].join("; ");
+      await execFileAsync("powershell.exe", ["-NoProfile", "-Command", speech], { env: { ...process.env, CUT_TEST_AUDIO: wav } });
+      await execFileAsync(require("ffmpeg-static"), [
       "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=blue:s=640x360:r=10",
       "-i", wav, "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", video,
-    ]);
-
-    const preferences = { mode: "discover", genre: "Educação", durationPreset: "custom", minDurationSec: 5, maxDurationSec: 20, desiredCount: 1 };
-    const form = new FormData();
-    form.set("file", new File([await fs.readFile(video)], "teste-sintetico.mp4", { type: "video/mp4" }));
-    form.set("preferences", JSON.stringify(preferences));
-    const created = await json("/api/cuts/jobs", { method: "POST", body: form });
+      ]);
+      const form = new FormData();
+      form.set("file", new File([await fs.readFile(video)], "teste-sintetico.mp4", { type: "video/mp4" }));
+      form.set("preferences", JSON.stringify(preferences));
+      created = await json("/api/cuts/jobs", { method: "POST", body: form });
+    }
     jobId = created.jobId;
     assert.ok(jobId);
-    console.log("Upload sintético concluído; iniciando a análise.");
+    console.log("Fonte de teste criada; iniciando a análise.");
     await json(`/api/cuts/jobs/${jobId}/analyze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferences }) });
     console.log("Análise iniciada; aguardando a transcrição.");
     const analyzed = await waitForJob(jobId, "ready_for_review");

@@ -9,8 +9,9 @@ import { getJobDir, fileExists } from "@/lib/video/paths";
 import { extractAudioForVideo, probeVideo } from "@/lib/video/probe";
 import { detectSceneChanges } from "@/lib/video/scenes";
 import { withVideoLimit } from "@/lib/video/limits";
-import { getStoredJob, isJobCancelled, setJobProgress, updateVideoJob, YOUTUBE_CUT_UPLOAD_REQUIRED } from "@/lib/video/job-store";
+import { getStoredJob, isJobCancelled, setJobProgress, updateVideoJob } from "@/lib/video/job-store";
 import { transcribeVideoStructured } from "@/lib/video/transcript";
+import { acquireYoutubeVideo } from "@/lib/video/youtube-source";
 
 async function checkCancelled(jobId: string, signal: AbortSignal) {
   if (await isJobCancelled(jobId, signal)) {
@@ -23,24 +24,32 @@ export async function processVideoJob(jobId: string, signal: AbortSignal) {
   if (!initialJob) throw new Error("Job de vídeo não encontrado.");
 
   await fs.rm(path.join(getJobDir(jobId), "cancel.flag"), { force: true }).catch(() => undefined);
-  const sourcePath = initialJob.sourcePath;
+  let sourcePath = initialJob.sourcePath;
   let audioPath: string | undefined;
+  let sourceDetails: { title: string; channel?: string; thumbnail?: string } | undefined;
 
   try {
     await checkCancelled(jobId, signal);
     await setJobProgress(jobId, "validating", 3, "Validando a origem do vídeo...");
 
+    if ((!sourcePath || !(await fileExists(sourcePath))) && initialJob.sourceType === "youtube" && initialJob.sourceUrl) {
+      await setJobProgress(jobId, "acquiring", 8, "Obtendo o vídeo público do YouTube...");
+      const acquired = await acquireYoutubeVideo(jobId, initialJob.sourceUrl, signal);
+      sourcePath = acquired.sourcePath;
+      sourceDetails = acquired;
+      await updateVideoJob(jobId, { sourcePath, sourceName: acquired.title });
+    }
     if (!sourcePath || !(await fileExists(sourcePath))) {
-      throw new Error(initialJob.sourceType === "youtube" ? YOUTUBE_CUT_UPLOAD_REQUIRED : "O arquivo de vídeo não está disponível para processamento.");
+      throw new Error("O arquivo de vídeo não está disponível para processamento.");
     }
 
     await checkCancelled(jobId, signal);
     await setJobProgress(jobId, "probing", 16, "Lendo duração, resolução e faixas do vídeo...");
     const latest = await getStoredJob(jobId);
     const probed = await probeVideo(sourcePath, initialJob.sourceType, {
-      title: latest?.metadata?.title || initialJob.sourceName,
-      channel: latest?.metadata?.channel,
-      thumbnail: latest?.metadata?.thumbnail,
+      title: sourceDetails?.title || latest?.metadata?.title || initialJob.sourceName,
+      channel: sourceDetails?.channel || latest?.metadata?.channel,
+      thumbnail: sourceDetails?.thumbnail || latest?.metadata?.thumbnail,
     });
     const env = getServerEnv();
     if (probed.durationSec > env.maxVideoDurationSec) {
